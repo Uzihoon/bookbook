@@ -20,14 +20,16 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { seed, requestBook, updateLoan } from "./model.js";
-const KEY = "bookbook-demo-v1";
+import AddBook from "./AddBook.jsx";
+import { coverSource } from "./catalog.js";
+const memberStorageKey = (id) => `bookbook-member-demo-v1:${id}`;
 const monthLabel = (value, short = false) =>
   new Date(value + "-02T12:00:00").toLocaleDateString("en-US", {
     month: short ? "short" : "long",
     year: "numeric",
   });
 const initials = (name) =>
-  name === "You" ? "JH" : name.slice(0, 2).toUpperCase();
+  name === "You" ? "ME" : name.slice(0, 2).toUpperCase();
 function Avatar({ name, small = false }) {
   return (
     <span
@@ -40,6 +42,8 @@ function Avatar({ name, small = false }) {
 }
 function Book({ book, large = false }) {
   const [failed, setFailed] = useState(false);
+  const imageSource = coverSource(book);
+  useEffect(() => setFailed(false), [imageSource]);
   return (
     <div className={`book-scene ${large ? "large" : ""}`} aria-hidden="true">
       <div
@@ -49,9 +53,10 @@ function Book({ book, large = false }) {
         <div className="book-back" />
         <div className="book-pages" />
         <div className="book-front">
-          {book.cover && !failed ? (
+          {imageSource && !failed ? (
             <img
-              src={`/covers/${book.cover}.jpg`}
+              src={imageSource}
+              referrerPolicy="no-referrer"
               alt=""
               onError={() => setFailed(true)}
             />
@@ -102,9 +107,9 @@ function Modal({ title, onClose, children, wide = false }) {
     </dialog>
   );
 }
-function load() {
+function load(key) {
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY));
+    const saved = JSON.parse(localStorage.getItem(key));
     if (
       saved &&
       Array.isArray(saved.books) &&
@@ -118,8 +123,9 @@ function load() {
   } catch {}
   return structuredClone(seed);
 }
-export default function App() {
-  const [state, setState] = useState(load),
+export default function App({ member, onLogout, signingOut, logoutError }) {
+  const key = memberStorageKey(member.id);
+  const [state, setState] = useState(() => load(key)),
     [page, setPage] = useState("shelf"),
     [filter, setFilter] = useState("all"),
     [query, setQuery] = useState(""),
@@ -129,12 +135,12 @@ export default function App() {
     [storageError, setStorageError] = useState(false);
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(key, JSON.stringify(state));
       setStorageError(false);
     } catch {
       setStorageError(true);
     }
-  }, [state]);
+  }, [state, key]);
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(""), 4500);
@@ -229,7 +235,7 @@ export default function App() {
               onClick={() => setModal({ type: "profile" })}
               aria-label="Your profile and demo information"
             >
-              <Avatar name="You" />
+              <Avatar name={member.name} />
             </button>
           </div>
         </div>
@@ -730,11 +736,12 @@ export default function App() {
       {modal?.type === "profile" && (
         <Modal title="YOUR READING CORNER" onClose={() => setModal(null)}>
           <div className="profile-info">
-            <Avatar name="You" />
-            <h2>Hello, Jiwoo.</h2>
+            <Avatar name={member.name} />
+            <h2>Hello, {member.name}.</h2>
             <p>
-              You’re trying the Sunday Book Club demo. The people, books, and
-              requests are sample data.
+              You’re signed in to Bookbook. The bookshelf, people, and borrowing
+              requests are still sample data while we connect the shared
+              library.
             </p>
             <div className="demo-info">
               <strong>A little space to try things out.</strong>
@@ -748,6 +755,18 @@ export default function App() {
               onClick={() => setModal({ type: "reset" })}
             >
               Reset demo data
+            </button>
+            {logoutError && (
+              <p className="form-error" role="alert">
+                {logoutError}
+              </p>
+            )}
+            <button
+              className="button primary"
+              disabled={signingOut}
+              onClick={onLogout}
+            >
+              {signingOut ? "Logging out…" : "Log out"}
             </button>
           </div>
         </Modal>
@@ -877,92 +896,6 @@ function BookAction({ book, state, onRequest, onLoans, onAvailability }) {
         </small>
       )}
     </>
-  );
-}
-function AddBook({ onSave }) {
-  const [error, setError] = useState("");
-  function submit(e) {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    const title = f.get("title").trim(),
-      author = f.get("author").trim();
-    if (!title || !author) {
-      setError("Please enter a book title and author.");
-      return;
-    }
-    onSave({
-      id: crypto.randomUUID(),
-      title,
-      author,
-      genre: f.get("genre"),
-      note: f.get("note").trim(),
-      status: f.get("available") ? "available" : "unlisted",
-      owner: "You",
-      color: f.get("color"),
-      cover: null,
-    });
-  }
-  return (
-    <form onSubmit={submit}>
-      <h2>Make room for a new story.</h2>
-      <p>Add a book you own to the club’s shared shelf.</p>
-      <label className="field">
-        Book title
-        <input
-          name="title"
-          required
-          maxLength={150}
-          placeholder="What’s on your shelf?"
-          autoFocus
-        />
-      </label>
-      <label className="field">
-        Author
-        <input
-          name="author"
-          required
-          maxLength={100}
-          placeholder="Who wrote it?"
-        />
-      </label>
-      <div className="form-columns">
-        <label className="field">
-          Genre
-          <select name="genre">
-            <option>Fiction</option>
-            <option>Nonfiction</option>
-            <option>Memoir</option>
-            <option>Poetry</option>
-            <option>Other</option>
-          </select>
-        </label>
-        <label className="field">
-          Cover color
-          <input type="color" name="color" defaultValue="#693746" />
-        </label>
-      </div>
-      <label className="field">
-        A note for your clubmates <span className="optional">(optional)</span>
-        <textarea
-          name="note"
-          maxLength={400}
-          rows={3}
-          placeholder="Why you love it, or anything a borrower should know…"
-        />
-      </label>
-      <label className="checkbox-field">
-        <input name="available" type="checkbox" defaultChecked />
-        Available for clubmates to borrow
-      </label>
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      <button className="button primary full" type="submit">
-        <Plus size={17} /> Add to our bookshelf
-      </button>
-    </form>
   );
 }
 function PickForm({ mode, value, state, onSave }) {

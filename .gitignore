@@ -5,3 +5,11 @@ dist/
 .env
 .env.*
 !.env.example
+
+.vercel/
+
+# Local Neon context and agent tooling (not application source).
+/.neon
+/.agents/skills/
+/.codex/
+/skills-lock.json
