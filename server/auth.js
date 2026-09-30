@@ -172,7 +172,7 @@ export function createAuth({
       let current;
       if (action === "signup") {
         const invite = getInviteCode()?.trim();
-        if (!invite || invite.length < 16) return unavailable();
+        if (!invite) return unavailable();
         if (
           typeof body.inviteCode !== "string" ||
           !timingSafeEqual(

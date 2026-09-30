@@ -20,7 +20,7 @@ Joining takes a unique name, a password (12–128 characters), and the club code
 ### One-time database setup
 
 1. Create a hosted PostgreSQL database (for example, [Neon](https://neon.com/)) and copy its pooled connection string with the provider’s TLS settings. Node.js 22 or newer is required.
-2. Set `DATABASE_URL` in `.env.local`. Set `CLUB_INVITE_CODE` to a random private value of at least 16 characters. A random code has already been prepared in the local workspace; on a fresh clone, create your own. Never use a `VITE_` prefix.
+2. Set `DATABASE_URL` in `.env.local`. Set `CLUB_INVITE_CODE` to a nonempty private value; there is no invite-code length requirement. A random code has already been prepared in the local workspace; on a fresh clone, create your own. Never use a `VITE_` prefix.
 3. Run `npm run db:migrate`, then restart `npm run dev`. Migrations create the member, session, and request-limit tables and can be run again safely. Without database configuration, authentication fails closed.
 4. Open **Join the club**, create your account, and share only the invite code privately with clubmates. Each member chooses their own name and password.
 5. Add `DATABASE_URL` and `CLUB_INVITE_CODE` to Vercel’s server environment variables before deploying. Use a separate database and invite code for untrusted/development previews; never point them at the production member database. Run the migration against each database before using it.

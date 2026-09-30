@@ -34,6 +34,18 @@ function req(action, body, cookie, requestOrigin = origin) {
 const signup = (name = "지우", inviteCode = code) =>
   auth.handle(req("signup", { name, password, inviteCode }));
 const cookieOf = (r) => r.headers.get("set-cookie")?.split(";")[0];
+for (const inviteCode of ["x", "READ2026", "x".repeat(129)]) {
+  test(`signup accepts a matching ${inviteCode.length}-character invite code`, async () => {
+    auth = createAuth({
+      store: createAuthStore(db),
+      getInviteCode: () => inviteCode,
+    });
+    assert.equal((await signup("지우", "incorrect-code")).status, 403);
+    const response = await signup("지우", inviteCode);
+    assert.equal(response.status, 201);
+    assert.equal((await response.json()).member.name, "지우");
+  });
+}
 test("signup requires the club code and never creates an account for an invalid code", async () => {
   const r = await signup("지우", "wrong-code");
   assert.equal(r.status, 403);

@@ -293,7 +293,6 @@ function LoginForm({ onMember, initialError }) {
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
               required
-              maxLength={128}
               placeholder="From your club organizer"
               disabled={busy}
             />
