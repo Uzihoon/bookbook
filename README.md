@@ -2,7 +2,7 @@
 
 A responsive book-club app with dimensional book covers, a shared lending shelf, monthly reading history, an editable chooser rotation, and a small Kakao book-search backend.
 
-![Bookbook desktop preview](docs/screenshots/desktop.png)
+![Bookbook empty bookshelf](docs/screenshots/empty-shelf.png)
 
 ## Run
 
@@ -29,7 +29,7 @@ The code is reusable for this one club and required only for signup. Changing it
 
 Passwords are salted scrypt hashes, and session tokens are stored as SHA-256 digests. Sessions expire after 30 days and are carried by HttpOnly, SameSite cookies (Secure on HTTPS/production). Logout revokes the server session. POST requests require the same origin. Persistent request limits apply across function instances, and `/api/books` requires authentication.
 
-Name changes, a password recovery UI, and member administration are not included in this first version. Keep database administration restricted to the organizer. Accounts are persistent; the bookshelf and lending data are still the local demo described below.
+Name changes, a password recovery UI, and member administration are not included in this first version. Keep database administration restricted to the organizer. Accounts are persistent; the bookshelf and lending data still use the browser storage described below.
 
 ## Kakao book search setup
 
@@ -63,11 +63,13 @@ neon env pull --service postgres --file .env.neon
 
 The explicit env file keeps local Acer database settings in `.env.local` intact. Both files are ignored by Git. Copy only the pooled `DATABASE_URL` value from `.env.neon` into Vercel's Production environment; keep all TLS parameters. Initialize Neon by running `server/schema.sql` in its SQL Editor. This creates empty tables and does not transfer existing accounts from another database. Use a separate database branch for previews and development.
 
-## Club-data demo
+## Club data
 
-Member accounts and book search have a backend. Lending and monthly picks remain a local demo, with sample people, books, selections, and requests. The signed-in member is shown as “You” in demo records. Browser localStorage retains these changes separately for each member on this device. Previous anonymous demo records are preserved under their original storage key; they are not automatically assigned to a new member. Profile → Reset demo data restores the sample collection. Seed dates are September 2026.
+Member accounts and book search have a backend. Books, borrowing records, and monthly picks are still saved separately for each signed-in member in this browser; they are not yet shared between devices or members. No borrowing requests are delivered to other people.
 
-Try adding a book, searching/filtering the shelf, requesting an available copy, accepting Sarah’s sample request, marking a handoff and return, choosing an upcoming book, changing the chooser order, or recording a previous monthly selection. Catalog books retain their cover and edition metadata; manually entered books use a typographic cover in a chosen color.
+New collections start empty. The app removes the original sample books, their loans and picks, and untouched sample turns from existing browser data on the next load. Books added by members and their related records are preserved. A local backup of the old collection is retained under the original storage key with `:before-sample-cleanup` appended. This cleanup does not delete member accounts or change the database.
+
+Add a book, record the first monthly read, or plan an upcoming month with a chooser's name. Catalog books retain their cover and edition metadata; manually entered books use a typographic cover in a chosen color.
 
 ## Assets
 
@@ -84,8 +86,9 @@ Local cover images are retrieved from Open Library’s Covers API using the rele
 - `server/schema.sql`, `scripts/migrate.js`: Postgres account schema and migration command
 - `server/book-search.js`: Kakao proxy, validation, normalization, and errors
 - `vite.config.js`: local API middleware and server-only environment loading
-- `src/model.js`: sample data and lending transitions
+- `src/model.js`: lending transitions
+- `src/state.js`: empty collections and migration of legacy sample data
 - `src/styles.css`: responsive design and CSS 3D book surfaces
 - `src/*.test.js`, `server/*.test.js`: lending, catalog, and API checks
 
-Next: migrate club data to the database, enforce ownership/roles on those operations, and replace the fixed demo month with club scheduling rules.
+Next: migrate club data to the database, enforce ownership/roles on those operations, and add club scheduling rules.

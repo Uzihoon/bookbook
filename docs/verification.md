@@ -52,3 +52,14 @@ Verified September 27, 2026.
 - Confirmed that the Neon public schema was empty, then ran the existing schema migration over the direct connection.
 - Verified all three tables through the pooled connection. The app's auth handler queried Neon for an invalid session and returned HTTP 200 with `{ "member": null }`; unauthenticated book search returned HTTP 401. No test accounts were created.
 - Vercel deployment and end-to-end signup on the public site remain unverified. Installed MCP configuration still requires client OAuth sign-in before MCP tools can be used; the CLI is authenticated.
+
+## Sample-data cleanup
+
+Verified September 29, 2026.
+
+- Removed the built-in book collection, borrowing records, monthly history, and picking rotation. New member collections start empty.
+- Added a one-time migration keyed by the original sample IDs that preserves member-added books and related records. Legacy local data is backed up before cleanup when storage is available. Removed the action that restored demo data.
+- Automated checks cover clean initial state, preservation of member additions (including matching sample titles), dependent-record cleanup, and repeated loads. All 33 tests pass.
+- Isolated browser preview: empty shelf, journal, picking order, borrowing list, and first-book guidance render; adding a book, recording the first monthly read, and scheduling an upcoming pick work and survive reload. No real accounts or database rows were created.
+- Mobile widths 320 and 390 have no horizontal overflow. Browser error log is empty. Screenshot: `docs/screenshots/empty-shelf.png`.
+- Club books, loans, and picks remain browser-local; shared persistence is not included in this change.

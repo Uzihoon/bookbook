@@ -289,6 +289,21 @@ h1 {
   position: relative;
   z-index: 1;
 }
+.monthly-feature.is-empty {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  min-height: 260px;
+}
+.monthly-feature.is-empty .feature-copy {
+  padding: 30px;
+}
+.monthly-feature.is-empty h2,
+.monthly-feature.is-empty .feature-description {
+  max-width: 460px;
+}
+.chooser-list > p {
+  grid-column: 1 / -1;
+}
 .status-dot {
   width: 5px;
   height: 5px;

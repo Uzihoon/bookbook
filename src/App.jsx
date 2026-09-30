@@ -19,7 +19,8 @@ import {
   Leaf,
   CheckCheck,
 } from "lucide-react";
-import { seed, requestBook, updateLoan } from "./model.js";
+import { requestBook, updateLoan } from "./model.js";
+import { emptyState, removeSampleData } from "./state.js";
 import AddBook from "./AddBook.jsx";
 import { coverSource } from "./catalog.js";
 const memberStorageKey = (id) => `bookbook-member-demo-v1:${id}`;
@@ -118,10 +119,18 @@ function load(key) {
       Array.isArray(saved.queue) &&
       saved.books.every((b) => b.id && b.title && b.owner) &&
       saved.picks.every((p) => saved.books.some((b) => b.id === p.bookId))
-    )
-      return saved;
+    ) {
+      if (!saved.version) {
+        try {
+          const backupKey = `${key}:before-sample-cleanup`;
+          if (!localStorage.getItem(backupKey))
+            localStorage.setItem(backupKey, JSON.stringify(saved));
+        } catch {}
+      }
+      return removeSampleData(saved);
+    }
   } catch {}
-  return structuredClone(seed);
+  return emptyState();
 }
 export default function App({ member, onLogout, signingOut, logoutError }) {
   const key = memberStorageKey(member.id);
@@ -233,7 +242,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
             <button
               className="profile-button"
               onClick={() => setModal({ type: "profile" })}
-              aria-label="Your profile and demo information"
+              aria-label="Your profile"
             >
               <Avatar name={member.name} />
             </button>
@@ -274,47 +283,76 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
               className="club-overview"
               aria-label="This month in the club"
             >
-              <article className="monthly-feature">
-                <div className="feature-copy">
-                  <span className="eyebrow">
-                    <span className="status-dot" /> OUR{" "}
-                    {monthLabel(current.month, true)
-                      .split(" ")[0]
-                      .toUpperCase()}{" "}
-                    READ
-                  </span>
-                  <h2>{featured.title}</h2>
-                  <p className="feature-author">by {featured.author}</p>
-                  <p className="feature-description">
-                    {featured.note ||
-                      featured.description ||
-                      "Our latest story to read and share together."}
-                  </p>
-                  <div className="chosen-by">
-                    <Avatar name={current.chooser} small />
-                    <span>
-                      Picked by <strong>{current.chooser}</strong>
-                    </span>
+              <article className={`monthly-feature${featured ? "" : " is-empty"}`}>
+                {featured ? (
+                  <>
+                    <div className="feature-copy">
+                      <span className="eyebrow">
+                        <span className="status-dot" /> OUR{" "}
+                        {monthLabel(current.month, true)
+                          .split(" ")[0]
+                          .toUpperCase()}{" "}
+                        READ
+                      </span>
+                      <h2>{featured.title}</h2>
+                      <p className="feature-author">by {featured.author}</p>
+                      <p className="feature-description">
+                        {featured.note ||
+                          featured.description ||
+                          "Our latest story to read and share together."}
+                      </p>
+                      <div className="chosen-by">
+                        <Avatar name={current.chooser} small />
+                        <span>
+                          Picked by <strong>{current.chooser}</strong>
+                        </span>
+                      </div>
+                      <button
+                        className="text-button"
+                        onClick={() =>
+                          setModal({ type: "book", id: featured.id })
+                        }
+                      >
+                        Meet this month’s book <ArrowUpRight size={18} />
+                      </button>
+                    </div>
+                    <button
+                      className="feature-art"
+                      onClick={() =>
+                        setModal({ type: "book", id: featured.id })
+                      }
+                      aria-label={`View ${featured.title}`}
+                    >
+                      <div className="art-halo" />
+                      <Book book={featured} large />
+                      <span className="feature-edition">
+                        {monthLabel(current.month).toUpperCase()}
+                        <span>THE CLUB COLLECTION</span>
+                      </span>
+                    </button>
+                  </>
+                ) : (
+                  <div className="feature-copy">
+                    <span className="eyebrow">OUR FIRST CHAPTER</span>
+                    <h2>A new story starts here.</h2>
+                    <p className="feature-description">
+                      Our reading journal is waiting for its first book.
+                    </p>
+                    <button
+                      className="text-button"
+                      onClick={() =>
+                        state.books.length
+                          ? openPick("record")
+                          : setModal({ type: "add" })
+                      }
+                    >
+                      {state.books.length
+                        ? "Record our first read"
+                        : "Add the first book"}{" "}
+                      <ArrowUpRight size={18} />
+                    </button>
                   </div>
-                  <button
-                    className="text-button"
-                    onClick={() => setModal({ type: "book", id: featured.id })}
-                  >
-                    Meet this month’s book <ArrowUpRight size={18} />
-                  </button>
-                </div>
-                <button
-                  className="feature-art"
-                  onClick={() => setModal({ type: "book", id: featured.id })}
-                  aria-label={`View ${featured.title}`}
-                >
-                  <div className="art-halo" />
-                  <Book book={featured} large />
-                  <span className="feature-edition">
-                    {monthLabel(current.month).toUpperCase()}
-                    <span>THE CLUB COLLECTION</span>
-                  </span>
-                </button>
+                )}
               </article>
               <aside className="next-card">
                 <div className="next-heading">
@@ -323,6 +361,11 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                 </div>
                 <h2>Who’s picking next?</h2>
                 <div className="chooser-list">
+                  {!state.queue.length && (
+                    <p>
+                      No upcoming picks yet. Plan a month when you’re ready.
+                    </p>
+                  )}
                   {state.queue.slice(0, 3).map((item, i) => (
                     <div
                       className={`chooser ${i === 0 ? "first" : ""}`}
@@ -447,18 +490,27 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                   <Search />
                   <h3>No books on this shelf yet.</h3>
                   <p>
-                    {query
-                      ? "Try another title, author, or clubmate."
-                      : "Add a book or try a different filter."}
+                    {!state.books.length
+                      ? "Start with a book you’d like to share."
+                      : query
+                        ? "Try another title, author, or clubmate."
+                        : "Add a book or try a different filter."}
                   </p>
                   <button
                     className="text-button"
                     onClick={() => {
+                      if (!state.books.length) {
+                        setModal({ type: "add" });
+                        return;
+                      }
                       setQuery("");
                       setFilter("all");
                     }}
                   >
-                    Show all books <ArrowRight size={16} />
+                    {state.books.length
+                      ? "Show all books"
+                      : "Add the first book"}{" "}
+                    <ArrowRight size={16} />
                   </button>
                 </div>
               )}
@@ -478,6 +530,13 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                 </button>
               </div>
               <div className="journal-grid">
+                {!state.picks.length && (
+                  <div className="empty-state">
+                    <BookOpen />
+                    <h3>No monthly reads yet.</h3>
+                    <p>Record your first selection to begin the journal.</p>
+                  </div>
+                )}
                 {[...state.picks]
                   .sort((a, b) => b.month.localeCompare(a.month))
                   .map((pick, i) => {
@@ -520,6 +579,13 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
               <div className="eyebrow">PASSING THE BOOKMARK</div>
               <h2>The picking order</h2>
               <p>Everyone gets a turn to bring a story to the table.</p>
+              {!state.queue.length && <p>No turns planned yet.</p>}
+              <button
+                className="text-button"
+                onClick={() => openPick("upcoming", {})}
+              >
+                <Plus size={16} /> Plan a month
+              </button>
               {state.queue.map((item, i) => (
                 <div className="queue-item" key={item.month}>
                   <div className="queue-person">
@@ -570,10 +636,12 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                   </button>
                 </div>
               ))}
-              <p className="queue-hint">
-                Use the arrows to swap turns. A chosen book stays with its
-                chooser.
-              </p>
+              {state.queue.length > 1 && (
+                <p className="queue-hint">
+                  Use the arrows to swap turns. A chosen book stays with its
+                  chooser.
+                </p>
+              )}
             </aside>
           </section>
         )}
@@ -594,7 +662,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
             Made for our little club <span className="footer-flower">✳</span>
           </span>
           <button onClick={() => setModal({ type: "profile" })}>
-            Demo · saved on this device
+            Saved on this device
           </button>
         </footer>
       </main>
@@ -706,31 +774,46 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
           }
           onClose={() => setModal(null)}
         >
-          <PickForm
-            mode={modal.mode}
-            value={modal.value}
-            state={state}
-            onSave={(value) => {
-              if (modal.mode === "record") {
-                setState({
-                  ...state,
-                  picks: [
-                    ...state.picks.filter((p) => p.month !== value.month),
-                    value,
-                  ],
-                });
-              } else {
-                setState({
-                  ...state,
-                  queue: state.queue.map((q) =>
-                    q.month === value.month ? value : q,
-                  ),
-                });
-              }
-              setModal(null);
-              notify("Your reading journey is updated.");
-            }}
-          />
+          {state.books.length ? (
+            <PickForm
+              mode={modal.mode}
+              value={modal.value}
+              state={state}
+              onSave={(value) => {
+                if (modal.mode === "record") {
+                  setState({
+                    ...state,
+                    picks: [
+                      ...state.picks.filter((p) => p.month !== value.month),
+                      value,
+                    ],
+                  });
+                } else {
+                  setState({
+                    ...state,
+                    queue: [
+                      ...state.queue.filter((q) => q.month !== value.month),
+                      value,
+                    ].sort((a, b) => a.month.localeCompare(b.month)),
+                  });
+                }
+                setModal(null);
+                notify("Your reading journey is updated.");
+              }}
+            />
+          ) : (
+            <div className="empty-state">
+              <BookOpen />
+              <h2>Add a book first.</h2>
+              <p>Then choose it for your monthly read.</p>
+              <button
+                className="button primary"
+                onClick={() => setModal({ type: "add" })}
+              >
+                Add a book
+              </button>
+            </div>
+          )}
         </Modal>
       )}
       {modal?.type === "profile" && (
@@ -739,23 +822,16 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
             <Avatar name={member.name} />
             <h2>Hello, {member.name}.</h2>
             <p>
-              You’re signed in to Bookbook. The bookshelf, people, and borrowing
-              requests are still sample data while we connect the shared
-              library.
+              You’re signed in to Bookbook. Your books and reading plans are
+              saved on this device.
             </p>
             <div className="demo-info">
-              <strong>A little space to try things out.</strong>
+              <strong>Your collection, on this device.</strong>
               <p>
                 Add books, request a loan, or choose next month’s read. Changes
                 stay in this browser. No requests are sent to other people.
               </p>
             </div>
-            <button
-              className="button secondary"
-              onClick={() => setModal({ type: "reset" })}
-            >
-              Reset demo data
-            </button>
             {logoutError && (
               <p className="form-error" role="alert">
                 {logoutError}
@@ -767,30 +843,6 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
               onClick={onLogout}
             >
               {signingOut ? "Logging out…" : "Log out"}
-            </button>
-          </div>
-        </Modal>
-      )}
-      {modal?.type === "reset" && (
-        <Modal title="A FRESH PAGE" onClose={() => setModal(null)}>
-          <h2>Reset the demo?</h2>
-          <p>
-            This removes the books, requests, and picks you added on this device
-            and restores the sample collection.
-          </p>
-          <div className="form-actions">
-            <button className="button secondary" onClick={() => setModal(null)}>
-              Keep my changes
-            </button>
-            <button
-              className="button primary"
-              onClick={() => {
-                setState(structuredClone(seed));
-                setModal(null);
-                notify("The demo is ready for a fresh start.");
-              }}
-            >
-              Reset demo
             </button>
           </div>
         </Modal>
@@ -899,25 +951,31 @@ function BookAction({ book, state, onRequest, onLoans, onAvailability }) {
   );
 }
 function PickForm({ mode, value, state, onSave }) {
-  const initial = value || state.queue[0];
-  const [month, setMonth] = useState(
-      mode === "record" ? value?.month || "2026-05" : initial.month,
-    ),
+  const initial = value || (mode === "upcoming" ? state.queue[0] : null) || {};
+  const today = new Date();
+  const defaultDate = new Date(
+    today.getFullYear(),
+    today.getMonth() + (mode === "upcoming" ? 1 : 0),
+    1,
+  );
+  const defaultMonth = `${defaultDate.getFullYear()}-${String(defaultDate.getMonth() + 1).padStart(2, "0")}`;
+  const [month, setMonth] = useState(initial.month || defaultMonth),
     [bookId, setBookId] = useState(
       (mode === "record" ? value?.bookId : initial.bookId) || "",
     ),
-    [name, setName] = useState(value?.chooser || initial.name || "You");
+    [name, setName] = useState(initial.chooser || initial.name || "You");
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        if (!name.trim()) return;
         onSave(
           mode === "record"
-            ? { month, bookId, chooser: name }
+            ? { month, bookId, chooser: name.trim() }
             : {
                 month,
                 bookId,
-                name: state.queue.find((q) => q.month === month).name,
+                name: name.trim(),
               },
         );
       }}
@@ -934,30 +992,12 @@ function PickForm({ mode, value, state, onSave }) {
       </p>
       <label className="field">
         Month
-        {mode === "record" ? (
-          <input
-            type="month"
-            required
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-          />
-        ) : (
-          <select
-            value={month}
-            onChange={(e) => {
-              setMonth(e.target.value);
-              setBookId(
-                state.queue.find((q) => q.month === e.target.value).bookId,
-              );
-            }}
-          >
-            {state.queue.map((q) => (
-              <option key={q.month} value={q.month}>
-                {monthLabel(q.month)} · {q.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <input
+          type="month"
+          required
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+        />
       </label>
       <label className="field">
         Book
@@ -976,16 +1016,16 @@ function PickForm({ mode, value, state, onSave }) {
           ))}
         </select>
       </label>
-      {mode === "record" && (
-        <label className="field">
-          Chosen by
-          <select value={name} onChange={(e) => setName(e.target.value)}>
-            {["You", "Mina", "Sarah", "Alex", "Daniel", "Jamie"].map((n) => (
-              <option key={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-      )}
+      <label className="field">
+        {mode === "record" ? "Chosen by" : "Who’s choosing?"}
+        <input
+          required
+          maxLength={30}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Clubmate’s name"
+        />
+      </label>
       {bookId && (
         <div className="pick-preview">
           <Book book={state.books.find((b) => b.id === bookId)} />
