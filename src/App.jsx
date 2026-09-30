@@ -120,9 +120,9 @@ function load(key) {
       saved.books.every((b) => b.id && b.title && b.owner) &&
       saved.picks.every((p) => saved.books.some((b) => b.id === p.bookId))
     ) {
-      if (!saved.version) {
+      if ((saved.version || 0) < 3) {
         try {
-          const backupKey = `${key}:before-sample-cleanup`;
+          const backupKey = `${key}:before-sample-cleanup-v3`;
           if (!localStorage.getItem(backupKey))
             localStorage.setItem(backupKey, JSON.stringify(saved));
         } catch {}

@@ -67,7 +67,7 @@ The explicit env file keeps local Acer database settings in `.env.local` intact.
 
 Member accounts and book search have a backend. Books, borrowing records, and monthly picks are still saved separately for each signed-in member in this browser; they are not yet shared between devices or members. No borrowing requests are delivered to other people.
 
-New collections start empty. The app removes the original sample books, their loans and picks, and untouched sample turns from existing browser data on the next load. Books added by members and their related records are preserved. A local backup of the old collection is retained under the original storage key with `:before-sample-cleanup` appended. This cleanup does not delete member accounts or change the database.
+New collections start empty. The app removes the original sample books, their loans and picks, and sample turns from existing browser data on the next load. A follow-up migration removes leftover Jamie/Alex turns in the original October–December 2026 demo schedule, including reordered turns and turns with a selected book. Member-added books are preserved even when a sample turn referencing them is removed. A local backup is retained under the original storage key with `:before-sample-cleanup-v3` appended. This cleanup does not delete member accounts or change the database.
 
 Add a book, record the first monthly read, or plan an upcoming month with a chooser's name. Catalog books retain their cover and edition metadata; manually entered books use a typographic cover in a chosen color.
 

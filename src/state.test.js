@@ -41,7 +41,7 @@ test("cleanup removes sample records and preserves member additions", () => {
   assert.deepEqual(result.books, [added]);
   assert.deepEqual(result.loans, [saved.loans[2]]);
   assert.deepEqual(result.picks, [saved.picks[1]]);
-  assert.deepEqual(result.queue, [saved.queue[1], saved.queue[3]]);
+  assert.deepEqual(result.queue, [saved.queue[3]]);
   assert.equal(saved.books.length, 2);
   assert.deepEqual(removeSampleData(result), result);
 });
@@ -49,7 +49,34 @@ test("cleanup removes sample records and preserves member additions", () => {
 test("new records are never removed on subsequent loads", () => {
   const state = {
     ...emptyState(),
-    queue: [{ name: "You", month: "2026-10", bookId: "" }],
+    queue: [
+      { name: "You", month: "2026-10", bookId: "" },
+      { name: "Jamie", month: "2026-11", bookId: "" },
+    ],
   };
   assert.deepEqual(removeSampleData(state), state);
+});
+
+test("follow-up cleanup removes reordered sample people and preserves their selected books", () => {
+  const book = { id: "member-copy", title: "My book", owner: "You" };
+  for (const version of [undefined, 2]) {
+    const state = {
+      version,
+      books: [book],
+      loans: [],
+      picks: [],
+      queue: [
+        { name: "Jamie", month: "2026-10", bookId: book.id },
+        { name: "Alex", month: "2026-11", bookId: "" },
+        { name: "You", month: "2026-12", bookId: book.id },
+        { name: "Jiwoo", month: "2027-01", bookId: book.id },
+        { name: "Jamie", month: "2027-02", bookId: book.id },
+      ],
+    };
+    const result = removeSampleData(state);
+    assert.deepEqual(result.queue, state.queue.slice(2));
+    assert.deepEqual(result.books, [book]);
+    assert.equal(result.version, 3);
+    assert.deepEqual(removeSampleData(result), result);
+  }
 });
