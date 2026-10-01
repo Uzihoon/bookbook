@@ -1,9 +1,32 @@
-export function coverSource(book) {
+export function coverSource(book, { large = false } = {}) {
   if (book.coverUrl) {
     try {
       const url = new URL(book.coverUrl);
-      if (url.protocol === "https:" && !url.username && !url.password)
+      if (url.protocol === "https:" && !url.username && !url.password) {
+        if (
+          large &&
+          /^search\d+\.kakaocdn\.net$/.test(url.hostname) &&
+          !url.port &&
+          url.pathname.startsWith("/thumb/")
+        ) {
+          // Kakao returns a resized preview; retain it if its original cannot be identified.
+          try {
+            const original = new URL(url.searchParams.get("fname"));
+            if (
+              ["http:", "https:"].includes(original.protocol) &&
+              /^t\d+\.daumcdn\.net$/.test(original.hostname) &&
+              /^\/lbook\/image\/\d+$/.test(original.pathname) &&
+              !original.username &&
+              !original.password &&
+              !original.port
+            ) {
+              original.protocol = "https:";
+              return original.href;
+            }
+          } catch {}
+        }
         return url.href;
+      }
     } catch {}
   }
   return typeof book.cover === "string" && /^[a-z0-9-]+$/i.test(book.cover)

@@ -39,10 +39,33 @@ function Avatar({ name, small = false }) {
     </span>
   );
 }
+function BookCover({ book, sources }) {
+  const [failedSources, setFailedSources] = useState([]);
+  const imageSource = sources.find(
+    (source) => source && !failedSources.includes(source),
+  );
+  return imageSource ? (
+    <img
+      key={imageSource}
+      src={imageSource}
+      referrerPolicy="no-referrer"
+      alt=""
+      onError={() => setFailedSources((failed) => [...failed, imageSource])}
+    />
+  ) : (
+    <div className="fallback-cover">
+      <span>
+        BOOKBOOK
+        <br />
+        SHARED LIBRARY
+      </span>
+      <strong>{book.title}</strong>
+      <em>{book.author}</em>
+    </div>
+  );
+}
 function Book({ book, large = false }) {
-  const [failed, setFailed] = useState(false);
-  const imageSource = coverSource(book);
-  useEffect(() => setFailed(false), [imageSource]);
+  const sources = [coverSource(book, { large }), coverSource(book)];
   return (
     <div className={`book-scene ${large ? "large" : ""}`} aria-hidden="true">
       <div
@@ -52,24 +75,11 @@ function Book({ book, large = false }) {
         <div className="book-back" />
         <div className="book-pages" />
         <div className="book-front">
-          {imageSource && !failed ? (
-            <img
-              src={imageSource}
-              referrerPolicy="no-referrer"
-              alt=""
-              onError={() => setFailed(true)}
-            />
-          ) : (
-            <div className="fallback-cover">
-              <span>
-                BOOKBOOK
-                <br />
-                SHARED LIBRARY
-              </span>
-              <strong>{book.title}</strong>
-              <em>{book.author}</em>
-            </div>
-          )}
+          <BookCover
+            key={JSON.stringify(sources)}
+            book={book}
+            sources={sources}
+          />
         </div>
         <div className="book-spine" />
       </div>
