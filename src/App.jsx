@@ -20,6 +20,7 @@ import {
   CheckCheck,
 } from "lucide-react";
 import useClub from "./useClub.js";
+import { pageForPath, pathForPage } from "./navigation.js";
 import AddBook from "./AddBook.jsx";
 import { coverSource } from "./catalog.js";
 const monthLabel = (value, short = false) =>
@@ -123,7 +124,7 @@ function Modal({
 }
 export default function App({ member, onLogout, signingOut, logoutError }) {
   const { state, error, busy, refresh, mutate } = useClub(member.id);
-  const [page, setPage] = useState("shelf"),
+  const [page, setPage] = useState(() => pageForPath(window.location.pathname)),
     [filter, setFilter] = useState("all"),
     [query, setQuery] = useState(""),
     [sort, setSort] = useState("recent"),
@@ -135,7 +136,18 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
     return () => clearTimeout(id);
   }, [toast]);
   const notify = (message) => setToast(message);
+  useEffect(() => {
+    const restorePage = () => {
+      setPage(pageForPath(window.location.pathname));
+      setModal(null);
+    };
+    window.addEventListener("popstate", restorePage);
+    return () => window.removeEventListener("popstate", restorePage);
+  }, []);
   const navigate = (next) => {
+    const path = pathForPage(next);
+    if (window.location.pathname !== path)
+      window.history.pushState(null, "", path);
     setPage(next);
     window.scrollTo({ top: 0, behavior: "instant" });
   };
@@ -716,7 +728,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
             onSave={async (book) => {
               await mutate({ action: "addBook", book });
               setModal(null);
-              setPage("shelf");
+              navigate("shelf");
               setFilter("mine");
               setQuery("");
               notify("Your book is on the shared shelf.");
