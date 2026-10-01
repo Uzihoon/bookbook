@@ -20,3 +20,5 @@
 - Isolated Neon integration passed using real sessions, two synthetic members, repeated schema application, shared reads, idempotent posting, and authorized deletion.
 - Browser posted a Korean multiline comment and verified it after a full reload. Another member's comment has no Delete action. Own-comment deletion requires inline confirmation.
 - Mobile checked at 390×844: page and dialog have no horizontal overflow, text wraps, and controls remain reachable. Screenshot uses test data only.
+- Production migration preserved existing records; comments release deployed successfully.
+- Reproduced the preceding rotation CI failure on Node 22.23.3 (tzdata 2026c): the test incorrectly assumed winter UTC-8 in January 2027. Vancouver adopted permanent UTC-7 in March 2026. The winter test now uses January 2026, where UTC-8 historically applied, while the application continues to use `America/Vancouver` from runtime timezone data.

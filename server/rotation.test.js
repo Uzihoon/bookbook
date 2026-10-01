@@ -6,11 +6,13 @@ import {
   rotationOrder,
   projectRotation,
 } from "../shared/rotation.js";
-test("club month follows Vancouver across UTC month boundaries and daylight saving", () => {
+test("club month follows Vancouver across UTC boundaries and historical winter time", () => {
   assert.equal(clubMonth(new Date("2026-10-01T02:00:00Z")), "2026-09");
   assert.equal(clubMonth(new Date("2026-10-01T07:00:00Z")), "2026-10");
-  assert.equal(clubMonth(new Date("2027-01-01T07:30:00Z")), "2026-12");
-  assert.equal(clubMonth(new Date("2027-01-01T08:00:00Z")), "2027-01");
+  // Vancouver adopted permanent UTC-7 in March 2026. Use historical winter
+  // dates to exercise UTC-8 without assuming future seasonal clock changes.
+  assert.equal(clubMonth(new Date("2026-01-01T07:30:00Z")), "2025-12");
+  assert.equal(clubMonth(new Date("2026-01-01T08:00:00Z")), "2026-01");
 });
 test("rotation starts with the current month, wraps after a full cycle, and never grows", () => {
   const rotation = { anchorMonth: "2026-10", memberIds: ["a", "b", "c", "d"] };
