@@ -8,7 +8,7 @@ export function apiMiddleware(routes) {
       let size = 0;
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > 4096) {
+        if (size > (pathname === "/api/club" ? 16384 : 4096)) {
           res.writeHead(413, {
             "Content-Type": "application/json",
             "Cache-Control": "no-store",

@@ -1,3 +1,4 @@
+import { createClub } from "./club.js";
 import { openDatabase } from "./database.js";
 import { createAuthStore } from "./auth-store.js";
 import { createAuth, protectSearch } from "./auth.js";
@@ -12,6 +13,11 @@ export function createRoutes(
   });
   return {
     "/api/auth": auth.handle,
+    "/api/club": createClub({
+      db,
+      auth,
+      limit: db ? createAuthStore(db).limit : null,
+    }),
     "/api/books": protectSearch(
       createBookSearchHandler({ getApiKey: () => env.KAKAO_REST_API_KEY }),
       auth,

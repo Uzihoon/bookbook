@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite. `npm run dev` serves both the frontend and `/api/books`. Production build: `npm run build`. Logic checks: `npm test`. `npm run preview` previews static assets only; use the dev server or Vercel for book search.
+Open the local URL printed by Vite. `npm run dev` serves the frontend and all `/api/*` endpoints. Production build: `npm run build`. Logic checks: `npm test`. `npm run preview` previews static assets only; use the dev server or Vercel for book search.
 
 ## Invite-only member accounts
 
@@ -21,7 +21,7 @@ Joining takes a unique name, a password (12–128 characters), and the club code
 
 1. Create a hosted PostgreSQL database (for example, [Neon](https://neon.com/)) and copy its pooled connection string with the provider’s TLS settings. Node.js 22 or newer is required.
 2. Set `DATABASE_URL` in `.env.local`. Set `CLUB_INVITE_CODE` to a nonempty private value; there is no invite-code length requirement. A random code has already been prepared in the local workspace; on a fresh clone, create your own. Never use a `VITE_` prefix.
-3. Run `npm run db:migrate`, then restart `npm run dev`. Migrations create the member, session, and request-limit tables and can be run again safely. Without database configuration, authentication fails closed.
+3. Run `npm run db:migrate`, then restart `npm run dev`. Migrations create the member, session, request-limit, and shared-club tables and can be run again safely. Without database configuration, authentication fails closed.
 4. Open **Join the club**, create your account, and share only the invite code privately with clubmates. Each member chooses their own name and password.
 5. Add `DATABASE_URL` and `CLUB_INVITE_CODE` to Vercel’s server environment variables before deploying. Use a separate database and invite code for untrusted/development previews; never point them at the production member database. Run the migration against each database before using it.
 
@@ -29,7 +29,7 @@ The code is reusable for this one club and required only for signup. Changing it
 
 Passwords are salted scrypt hashes, and session tokens are stored as SHA-256 digests. Sessions expire after 30 days and are carried by HttpOnly, SameSite cookies (Secure on HTTPS/production). Logout revokes the server session. POST requests require the same origin. Persistent request limits apply across function instances, and `/api/books` requires authentication.
 
-Name changes, a password recovery UI, and member administration are not included in this first version. Keep database administration restricted to the organizer. Accounts are persistent; the bookshelf and lending data still use the browser storage described below.
+Name changes, a password recovery UI, and member administration are not included in this first version. Keep database administration restricted to the organizer. All club data is stored in PostgreSQL.
 
 ## Kakao book search setup
 
@@ -44,8 +44,8 @@ The endpoint validates queries, caps pagination, applies a seven-second timeout,
 ## Deploy on Vercel
 
 1. Import `Uzihoon/bookbook` into your Vercel account and select the Vite framework preset. The root is this repository, the build command is `npm run build`, and the output directory is `dist`.
-2. Add `KAKAO_REST_API_KEY`, `DATABASE_URL`, and `CLUB_INVITE_CODE` in project environment variables. Initialize the account schema with `npm run db:migrate` using the matching database connection. Keep preview databases separate from production.
-3. Use Node.js 22.x and deploy the version containing both `api/auth.js` and `api/books.js`. Redeploy after changing environment variables. Vercel runs the API as Node.js functions; the browser uses the same origin, so no separate backend URL or CORS setup is needed.
+2. Add `KAKAO_REST_API_KEY`, `DATABASE_URL`, and `CLUB_INVITE_CODE` in project environment variables. Initialize the complete schema with `npm run db:migrate` using the matching database connection. Keep preview databases separate from production.
+3. Use Node.js 22.x and deploy the version containing `api/auth.js`, `api/books.js`, and `api/club.js`. Redeploy after changing environment variables. Vercel runs the API as Node.js functions; the browser uses the same origin, so no separate backend URL or CORS setup is needed.
 4. Verify signup, logout, login, and Korean title/ISBN searches on the deployed site. Book search is member-only and limited to 60 requests per member per minute.
 
 ### Neon CLI setup
@@ -65,11 +65,20 @@ The explicit env file keeps local Acer database settings in `.env.local` intact.
 
 ## Club data
 
-Member accounts and book search have a backend. Books, borrowing records, and monthly picks are still saved separately for each signed-in member in this browser; they are not yet shared between devices or members. No borrowing requests are delivered to other people.
+Books, loans, monthly reading history, and picking turns live in PostgreSQL. Every signed-in member sees the same club. The member directory and chooser dropdown use registered accounts; permission checks use IDs, not display names.
 
-New collections start empty. The app removes the original sample books, their loans and picks, and sample turns from existing browser data on the next load. A follow-up migration removes leftover Jamie/Alex turns in the original October–December 2026 demo schedule, including reordered turns and turns with a selected book. Member-added books are preserved even when a sample turn referencing them is removed. A local backup is retained under the original storage key with `:before-sample-cleanup-v3` appended. This cleanup does not delete member accounts or change the database.
+- Owners can pause lending and accept, decline, hand over, or confirm the return of their copies. Borrowers can cancel pending or accepted requests. Only one borrower can reserve a copy; accepting a request declines competing requests.
+- Any club member can maintain the monthly journal and picking order. Upcoming turns can have a chooser before the book is decided. Editing an existing month keeps that month fixed; use the arrows to swap neighboring turns.
+- Every write checks the authenticated session and current collection revision in a transaction. Stale edits return a conflict, refresh the collection, and leave the form open for review. Failed saves are shown as errors. Views refresh on return, reconnect, and every 30 seconds while visible.
+- The cutover deliberately discards old browser-only collections and their cleanup backups on the next signed-in load. There is no backfill. Members must register their books again. Existing database accounts and sessions are preserved.
 
-Add a book, record the first monthly read, or plan an upcoming month with a chooser's name. Catalog books retain their cover and edition metadata; manually entered books use a typographic cover in a chosen color.
+Apply `server/schema.sql` before deploying this version. It is additive and rerunnable; it does not truncate accounts or club records. For Neon migrations, use the direct connection (`DATABASE_URL_UNPOOLED`) and retain TLS parameters. The app uses the pooled URL. A static preview cannot save club data.
+
+### Operations
+
+Keep production credentials restricted to Vercel Production; use a separate Neon branch for previews. Configure database backups/restore retention in Neon to match the club's needs and periodically test restoration into an isolated branch. Run `npm test` and `npm run build` before deploying. `/api/club` returns 401 without a session and 503 on database failure; API responses are not cached. Server failures log safe error codes without credentials or book content. Club writes are limited to 60 per member per minute.
+
+This release supports one invited club, without admin roles, email notifications, password recovery, or member removal UI. Borrowing activity is visible in the app; no email or push notifications are sent.
 
 ## Assets
 
@@ -81,14 +90,12 @@ Local cover images are retrieved from Open Library’s Covers API using the rele
 - `src/App.jsx`: views and accessible native dialog flows
 - `src/AddBook.jsx`, `src/BookSearch.jsx`: catalog search and copy registration
 - `src/catalog.js`: edition metadata and cover handling
-- `api/auth.js`, `api/books.js`: Vercel function entry points
+- `api/auth.js`, `api/books.js`, `api/club.js`: Vercel function entry points
 - `server/auth.js`, `server/auth-store.js`: authentication, sessions, and persistent request limits
-- `server/schema.sql`, `scripts/migrate.js`: Postgres account schema and migration command
+- `server/schema.sql`, `scripts/migrate.js`: Postgres schema and migration command
 - `server/book-search.js`: Kakao proxy, validation, normalization, and errors
 - `vite.config.js`: local API middleware and server-only environment loading
-- `src/model.js`: lending transitions
-- `src/state.js`: empty collections and migration of legacy sample data
+- `server/club.js`: authenticated, transactional shared club operations
+- `src/useClub.js`, `src/club-state.js`: shared data loading, saving, and retirement of browser collections
 - `src/styles.css`: responsive design and CSS 3D book surfaces
 - `src/*.test.js`, `server/*.test.js`: lending, catalog, and API checks
-
-Next: migrate club data to the database, enforce ownership/roles on those operations, and add club scheduling rules.

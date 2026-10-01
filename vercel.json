@@ -7,6 +7,7 @@
     "api/books.js": {
       "maxDuration": 15
     },
+    "api/club.js": { "maxDuration": 30 },
     "api/auth.js": {
       "maxDuration": 30
     }

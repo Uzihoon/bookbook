@@ -51,7 +51,6 @@ export default function AuthGate({ children }) {
       setSessionError("");
     } catch (error) {
       if (current !== revision.current) return;
-      setMember(null);
       setSessionError(messageFor(error));
     } finally {
       if (current === revision.current) setChecking(false);

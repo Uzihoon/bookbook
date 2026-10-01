@@ -2783,3 +2783,58 @@ body:has(dialog[open]) {
     font-size: 9px;
   }
 }
+
+.club-sync {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 22px 0 0;
+  color: var(--muted, #77776b);
+  font-size: 12px;
+}
+.club-error {
+  padding: 14px 18px;
+  margin-top: 20px;
+  background: #fff0e6;
+  border: 1px solid #e2c6b6;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.club-error button {
+  margin-left: 12px;
+}
+.club-loading {
+  min-height: 75vh;
+  justify-content: center;
+}
+.member-list {
+  list-style: none;
+  padding: 0;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.member-list li {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid #e2ddd3;
+}
+.member-list li div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.member-list li span:not(.avatar) {
+  font-size: 13px;
+  color: #747469;
+}
+fieldset.form-fields,
+fieldset.loan-actions {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}

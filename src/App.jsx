@@ -19,18 +19,15 @@ import {
   Leaf,
   CheckCheck,
 } from "lucide-react";
-import { requestBook, updateLoan } from "./model.js";
-import { emptyState, removeSampleData } from "./state.js";
+import useClub from "./useClub.js";
 import AddBook from "./AddBook.jsx";
 import { coverSource } from "./catalog.js";
-const memberStorageKey = (id) => `bookbook-member-demo-v1:${id}`;
 const monthLabel = (value, short = false) =>
   new Date(value + "-02T12:00:00").toLocaleDateString("en-US", {
     month: short ? "short" : "long",
     year: "numeric",
   });
-const initials = (name) =>
-  name === "You" ? "ME" : name.slice(0, 2).toUpperCase();
+const initials = (name) => name.slice(0, 2).toUpperCase();
 function Avatar({ name, small = false }) {
   return (
     <span
@@ -79,7 +76,14 @@ function Book({ book, large = false }) {
     </div>
   );
 }
-function Modal({ title, onClose, children, wide = false }) {
+function Modal({
+  title,
+  onClose,
+  children,
+  wide = false,
+  busy = false,
+  error = "",
+}) {
   const ref = useRef(null);
   useEffect(() => {
     ref.current.showModal();
@@ -89,9 +93,12 @@ function Modal({ title, onClose, children, wide = false }) {
       ref={ref}
       aria-label={title}
       className={`modal ${wide ? "wide" : ""}`}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
       onClick={(e) => {
-        if (e.target === ref.current) onClose();
+        if (e.target === ref.current && !busy) onClose();
       }}
     >
       <div className="modal-top">
@@ -100,56 +107,28 @@ function Modal({ title, onClose, children, wide = false }) {
           className="icon-button"
           onClick={onClose}
           aria-label="Close dialog"
+          disabled={busy}
         >
           <X size={20} />
         </button>
       </div>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
       {children}
     </dialog>
   );
 }
-function load(key) {
-  try {
-    const saved = JSON.parse(localStorage.getItem(key));
-    if (
-      saved &&
-      Array.isArray(saved.books) &&
-      Array.isArray(saved.loans) &&
-      Array.isArray(saved.picks) &&
-      Array.isArray(saved.queue) &&
-      saved.books.every((b) => b.id && b.title && b.owner) &&
-      saved.picks.every((p) => saved.books.some((b) => b.id === p.bookId))
-    ) {
-      if ((saved.version || 0) < 3) {
-        try {
-          const backupKey = `${key}:before-sample-cleanup-v3`;
-          if (!localStorage.getItem(backupKey))
-            localStorage.setItem(backupKey, JSON.stringify(saved));
-        } catch {}
-      }
-      return removeSampleData(saved);
-    }
-  } catch {}
-  return emptyState();
-}
 export default function App({ member, onLogout, signingOut, logoutError }) {
-  const key = memberStorageKey(member.id);
-  const [state, setState] = useState(() => load(key)),
-    [page, setPage] = useState("shelf"),
+  const { state, error, busy, refresh, mutate } = useClub(member.id);
+  const [page, setPage] = useState("shelf"),
     [filter, setFilter] = useState("all"),
     [query, setQuery] = useState(""),
     [sort, setSort] = useState("recent"),
     [modal, setModal] = useState(null),
-    [toast, setToast] = useState(""),
-    [storageError, setStorageError] = useState(false);
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(state));
-      setStorageError(false);
-    } catch {
-      setStorageError(true);
-    }
-  }, [state, key]);
+    [toast, setToast] = useState("");
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(""), 4500);
@@ -160,18 +139,42 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
     setPage(next);
     window.scrollTo({ top: 0, behavior: "instant" });
   };
-  const transact = (fn, message) => {
+  const transact = async (command, message) => {
     try {
-      setState(fn(state));
+      await mutate(command);
       notify(message);
-    } catch (e) {
-      notify(e.message);
+    } catch {
+      /* Shared error banner retains the failure. */
     }
   };
+  if (!state)
+    return (
+      <main className="empty-state club-loading">
+        <BookOpen size={32} />
+        <h1>Opening our shared shelf.</h1>
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <button className="button primary" onClick={refresh}>
+              Retry
+            </button>
+          </>
+        ) : (
+          <p role="status">Loading your club…</p>
+        )}
+        <button
+          className="quiet-button"
+          disabled={signingOut}
+          onClick={onLogout}
+        >
+          Log out
+        </button>
+      </main>
+    );
   const incoming = state.loans.filter(
     (l) =>
       l.status === "pending" &&
-      state.books.find((b) => b.id === l.bookId)?.owner === "You",
+      state.books.find((b) => b.id === l.bookId)?.isMine,
   );
   const current = [...state.picks].sort((a, b) =>
     b.month.localeCompare(a.month),
@@ -181,7 +184,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
     (b) =>
       (filter === "all" ||
         (filter === "available" && b.status === "available") ||
-        (filter === "mine" && b.owner === "You")) &&
+        (filter === "mine" && b.isMine)) &&
       `${b.title} ${b.author} ${b.owner}`
         .toLowerCase()
         .includes(query.toLowerCase()),
@@ -190,7 +193,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
     visible = [...visible].sort((a, b) => a.title.localeCompare(b.title));
   const changeLoan = (id, status) =>
     transact(
-      (s) => updateLoan(s, id, status),
+      { action: "changeLoan", loanId: id, status },
       {
         accepted: "Request accepted. Arrange a handoff with your clubmate.",
         declined: "Request declined.",
@@ -250,6 +253,23 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
         </div>
       </header>
       <main>
+        {error && (
+          <div className="club-error" role="alert">
+            {error}{" "}
+            <button className="text-button" onClick={refresh} disabled={busy}>
+              Refresh club
+            </button>
+          </div>
+        )}
+        <div className="club-sync" role="status">
+          {busy ? "Saving to the shared club…" : "Shared with all club members"}{" "}
+          <button
+            className="text-button"
+            onClick={() => setModal({ type: "members" })}
+          >
+            {state.members.length} members
+          </button>
+        </div>
         <div className="page-intro">
           <div>
             <div className="eyebrow intro-eyebrow">
@@ -283,7 +303,9 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
               className="club-overview"
               aria-label="This month in the club"
             >
-              <article className={`monthly-feature${featured ? "" : " is-empty"}`}>
+              <article
+                className={`monthly-feature${featured ? "" : " is-empty"}`}
+              >
                 {featured ? (
                   <>
                     <div className="feature-copy">
@@ -376,7 +398,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                       <div>
                         <strong>
                           {item.name}
-                          {i === 0 && item.name === "You" && (
+                          {i === 0 && item.chooserId === member.id && (
                             <span className="your-turn">Your turn</span>
                           )}
                         </strong>
@@ -479,7 +501,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                     requested={state.loans.some(
                       (l) =>
                         l.bookId === book.id &&
-                        l.borrower === "You" &&
+                        l.isBorrower &&
                         ["pending", "accepted"].includes(l.status),
                     )}
                   />
@@ -597,29 +619,33 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                     <div className="reorder-buttons">
                       <button
                         aria-label={`Move ${item.name} earlier`}
-                        disabled={i === 0}
-                        onClick={() => {
-                          const queue = [...state.queue];
-                          const prev = queue[i - 1];
-                          queue[i - 1] = { ...item, month: prev.month };
-                          queue[i] = { ...prev, month: item.month };
-                          setState({ ...state, queue });
-                          notify("Picking order updated.");
-                        }}
+                        disabled={busy || i === 0}
+                        onClick={() =>
+                          transact(
+                            {
+                              action: "swapTurns",
+                              month: item.month,
+                              otherMonth: state.queue[i - 1].month,
+                            },
+                            "Picking order updated.",
+                          )
+                        }
                       >
                         <ArrowUp size={15} />
                       </button>
                       <button
                         aria-label={`Move ${item.name} later`}
-                        disabled={i === state.queue.length - 1}
-                        onClick={() => {
-                          const queue = [...state.queue];
-                          const next = queue[i + 1];
-                          queue[i + 1] = { ...item, month: next.month };
-                          queue[i] = { ...next, month: item.month };
-                          setState({ ...state, queue });
-                          notify("Picking order updated.");
-                        }}
+                        disabled={busy || i === state.queue.length - 1}
+                        onClick={() =>
+                          transact(
+                            {
+                              action: "swapTurns",
+                              month: item.month,
+                              otherMonth: state.queue[i + 1].month,
+                            },
+                            "Picking order updated.",
+                          )
+                        }
                       >
                         <ArrowDown size={15} />
                       </button>
@@ -651,6 +677,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
             onBook={(id) => setModal({ type: "book", id })}
             onChange={changeLoan}
             incoming={incoming}
+            busy={busy}
           />
         )}
         <footer>
@@ -662,16 +689,10 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
             Made for our little club <span className="footer-flower">✳</span>
           </span>
           <button onClick={() => setModal({ type: "profile" })}>
-            Saved on this device
+            Saved to our shared club
           </button>
         </footer>
       </main>
-      {storageError && (
-        <div className="storage-warning" role="alert">
-          Browser storage is unavailable. Your changes will last until this page
-          closes.
-        </div>
-      )}
       {toast && (
         <div className="toast" role="status">
           <Check size={17} />
@@ -685,10 +706,15 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
         </div>
       )}
       {modal?.type === "add" && (
-        <Modal title="ADD TO THE SHELF" onClose={() => setModal(null)}>
+        <Modal
+          title="ADD TO THE SHELF"
+          busy={busy}
+          onClose={() => setModal(null)}
+        >
           <AddBook
-            onSave={(book) => {
-              setState({ ...state, books: [book, ...state.books] });
+            busy={busy}
+            onSave={async (book) => {
+              await mutate({ action: "addBook", book });
               setModal(null);
               setPage("shelf");
               setFilter("mine");
@@ -702,6 +728,8 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
         <Modal
           title="FROM OUR SHARED SHELF"
           wide
+          busy={busy}
+          error={error}
           onClose={() => setModal(null)}
         >
           <div className="book-details">
@@ -725,10 +753,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                 <blockquote>
                   “{bookInModal.note}”
                   <span>
-                    —{" "}
-                    {bookInModal.owner === "You"
-                      ? "Your note"
-                      : bookInModal.owner}
+                    — {bookInModal.isMine ? "Your note" : bookInModal.owner}
                   </span>
                 </blockquote>
               )}
@@ -737,7 +762,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                 state={state}
                 onRequest={() =>
                   transact(
-                    (s) => requestBook(s, bookInModal.id),
+                    { action: "requestLoan", bookId: bookInModal.id },
                     "Borrowing request sent. You can follow it in Borrowing.",
                   )
                 }
@@ -745,23 +770,20 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                   setModal(null);
                   navigate("loans");
                 }}
-                onAvailability={() => {
-                  setState({
-                    ...state,
-                    books: state.books.map((b) =>
-                      b.id === bookInModal.id
-                        ? {
-                            ...b,
-                            status:
-                              b.status === "unlisted"
-                                ? "available"
-                                : "unlisted",
-                          }
-                        : b,
-                    ),
-                  });
-                  notify("Book availability updated.");
-                }}
+                onAvailability={() =>
+                  transact(
+                    {
+                      action: "availability",
+                      bookId: bookInModal.id,
+                      status:
+                        bookInModal.status === "unlisted"
+                          ? "available"
+                          : "unlisted",
+                    },
+                    "Book availability updated.",
+                  )
+                }
+                busy={busy}
               />
             </div>
           </div>
@@ -772,31 +794,23 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
           title={
             modal.mode === "record" ? "READING JOURNAL" : "THE NEXT CHAPTER"
           }
+          busy={busy}
           onClose={() => setModal(null)}
         >
-          {state.books.length ? (
+          {state.books.length || modal.mode === "upcoming" ? (
             <PickForm
               mode={modal.mode}
               value={modal.value}
               state={state}
-              onSave={(value) => {
-                if (modal.mode === "record") {
-                  setState({
-                    ...state,
-                    picks: [
-                      ...state.picks.filter((p) => p.month !== value.month),
-                      value,
-                    ],
-                  });
-                } else {
-                  setState({
-                    ...state,
-                    queue: [
-                      ...state.queue.filter((q) => q.month !== value.month),
-                      value,
-                    ].sort((a, b) => a.month.localeCompare(b.month)),
-                  });
-                }
+              memberId={member.id}
+              busy={busy}
+              onSave={async (value, revision) => {
+                await mutate({
+                  revision,
+                  action: "saveSelection",
+                  kind: modal.mode === "record" ? "history" : "upcoming",
+                  ...value,
+                });
                 setModal(null);
                 notify("Your reading journey is updated.");
               }}
@@ -816,6 +830,28 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
           )}
         </Modal>
       )}
+      {modal?.type === "members" && (
+        <Modal title="OUR CLUB MEMBERS" onClose={() => setModal(null)}>
+          <h2>The people behind the shelf.</h2>
+          <ul className="member-list">
+            {state.members.map((person) => (
+              <li key={person.id}>
+                <Avatar name={person.name} />
+                <div>
+                  <strong>
+                    {person.name}
+                    {person.id === member.id ? " (you)" : ""}
+                  </strong>
+                  <span>
+                    {state.books.filter((b) => b.ownerId === person.id).length}{" "}
+                    books on the shelf
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
       {modal?.type === "profile" && (
         <Modal title="YOUR READING CORNER" onClose={() => setModal(null)}>
           <div className="profile-info">
@@ -823,13 +859,13 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
             <h2>Hello, {member.name}.</h2>
             <p>
               You’re signed in to Bookbook. Your books and reading plans are
-              saved on this device.
+              saved to our shared club.
             </p>
             <div className="demo-info">
-              <strong>Your collection, on this device.</strong>
+              <strong>One club, wherever you read.</strong>
               <p>
-                Add books, request a loan, or choose next month’s read. Changes
-                stay in this browser. No requests are sent to other people.
+                All members can see the bookshelf and reading plans. Borrowing
+                requests appear in the owner’s Borrowing tab.
               </p>
             </div>
             {logoutError && (
@@ -877,7 +913,7 @@ function BookCard({ book, onClick, requested }) {
         aria-label={`View ${book.title}`}
       >
         <Book book={book} />
-        {book.owner === "You" && <span className="owned-label">Your copy</span>}
+        {book.isMine && <span className="owned-label">Your copy</span>}
         <span className="book-open-icon">
           <ArrowUpRight size={19} />
         </span>
@@ -896,11 +932,11 @@ function BookCard({ book, onClick, requested }) {
     </article>
   );
 }
-function BookAction({ book, state, onRequest, onLoans, onAvailability }) {
+function BookAction({ book, state, onRequest, onLoans, onAvailability, busy }) {
   const loan = state.loans.find(
     (l) =>
       l.bookId === book.id &&
-      l.borrower === "You" &&
+      l.isBorrower &&
       ["pending", "accepted", "lent"].includes(l.status),
   );
   if (loan)
@@ -914,7 +950,7 @@ function BookAction({ book, state, onRequest, onLoans, onAvailability }) {
         <ArrowRight size={17} />
       </button>
     );
-  if (book.owner === "You")
+  if (book.isMine)
     return (
       <>
         <button className="button primary full" onClick={onLoans}>
@@ -922,7 +958,11 @@ function BookAction({ book, state, onRequest, onLoans, onAvailability }) {
           <ArrowRight size={17} />
         </button>
         {["available", "unlisted"].includes(book.status) && (
-          <button className="quiet-button" onClick={onAvailability}>
+          <button
+            className="quiet-button"
+            disabled={busy}
+            onClick={onAvailability}
+          >
             {book.status === "unlisted"
               ? "Make available to borrow"
               : "Pause lending this copy"}
@@ -934,7 +974,7 @@ function BookAction({ book, state, onRequest, onLoans, onAvailability }) {
     <>
       <button
         className="button primary full"
-        disabled={book.status !== "available"}
+        disabled={busy || book.status !== "available"}
         onClick={onRequest}
       >
         {book.status === "available"
@@ -950,7 +990,8 @@ function BookAction({ book, state, onRequest, onLoans, onAvailability }) {
     </>
   );
 }
-function PickForm({ mode, value, state, onSave }) {
+function PickForm({ mode, value, state, onSave, memberId, busy }) {
+  const editingRevision = useRef(state.revision);
   const initial = value || (mode === "upcoming" ? state.queue[0] : null) || {};
   const today = new Date();
   const defaultDate = new Date(
@@ -963,21 +1004,23 @@ function PickForm({ mode, value, state, onSave }) {
     [bookId, setBookId] = useState(
       (mode === "record" ? value?.bookId : initial.bookId) || "",
     ),
-    [name, setName] = useState(initial.chooser || initial.name || "You");
+    [chooserId, setChooserId] = useState(initial.chooserId || memberId),
+    [saveError, setSaveError] = useState("");
   return (
     <form
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        if (!name.trim()) return;
-        onSave(
-          mode === "record"
-            ? { month, bookId, chooser: name.trim() }
-            : {
-                month,
-                bookId,
-                name: name.trim(),
-              },
-        );
+        if (busy) return;
+        setSaveError("");
+        try {
+          await onSave(
+            { month, bookId: bookId || null, chooserId },
+            editingRevision.current ?? state.revision,
+          );
+        } catch (error) {
+          editingRevision.current = null;
+          setSaveError(error.message);
+        }
       }}
     >
       <h2>
@@ -994,6 +1037,9 @@ function PickForm({ mode, value, state, onSave }) {
         Month
         <input
           type="month"
+          min="2000-01"
+          max="2099-12"
+          disabled={busy || !!initial.month}
           required
           value={month}
           onChange={(e) => setMonth(e.target.value)}
@@ -1002,12 +1048,15 @@ function PickForm({ mode, value, state, onSave }) {
       <label className="field">
         Book
         <select
-          required
+          required={mode === "record"}
+          disabled={busy}
           value={bookId}
           onChange={(e) => setBookId(e.target.value)}
         >
-          <option value="" disabled>
-            Select from our bookshelf
+          <option value="" disabled={mode === "record"}>
+            {mode === "record"
+              ? "Select from our bookshelf"
+              : "Book to be decided"}
           </option>
           {state.books.map((b) => (
             <option key={b.id} value={b.id}>
@@ -1018,13 +1067,19 @@ function PickForm({ mode, value, state, onSave }) {
       </label>
       <label className="field">
         {mode === "record" ? "Chosen by" : "Who’s choosing?"}
-        <input
+        <select
           required
-          maxLength={30}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Clubmate’s name"
-        />
+          value={chooserId}
+          disabled={busy}
+          onChange={(e) => setChooserId(e.target.value)}
+        >
+          {state.members.map((person) => (
+            <option key={person.id} value={person.id}>
+              {person.name}
+              {person.id === memberId ? " (you)" : ""}
+            </option>
+          ))}
+        </select>
       </label>
       {bookId && (
         <div className="pick-preview">
@@ -1040,21 +1095,25 @@ function PickForm({ mode, value, state, onSave }) {
           This will update the existing pick for {monthLabel(month)}.
         </p>
       )}
-      <button className="button primary full" type="submit">
+      {saveError && (
+        <p className="form-error" role="alert">
+          {saveError}
+        </p>
+      )}
+      <button className="button primary full" type="submit" disabled={busy}>
         <Check size={17} /> Save {mode === "record" ? "monthly" : "upcoming"}{" "}
         pick
       </button>
     </form>
   );
 }
-function Borrowing({ state, onBook, onChange, incoming }) {
+function Borrowing({ state, onBook, onChange, incoming, busy }) {
   const [tab, setTab] = useState("active");
   const active = ["pending", "accepted", "lent"];
   const relevant = state.loans.filter(
     (l) =>
       state.books.some((b) => b.id === l.bookId) &&
-      (l.borrower === "You" ||
-        state.books.find((b) => b.id === l.bookId).owner === "You"),
+      (l.isBorrower || state.books.find((b) => b.id === l.bookId).isMine),
   );
   const loans = relevant.filter((l) =>
     tab === "active" ? active.includes(l.status) : !active.includes(l.status),
@@ -1088,7 +1147,7 @@ function Borrowing({ state, onBook, onChange, incoming }) {
       <div className="loan-list">
         {loans.map((l) => {
           const b = state.books.find((b) => b.id === l.bookId),
-            mine = b.owner === "You";
+            mine = b.isMine;
           return (
             <article className="loan-card" key={l.id}>
               <button
@@ -1121,7 +1180,7 @@ function Borrowing({ state, onBook, onChange, incoming }) {
                   }
                 </span>
               </div>
-              <div className="loan-actions">
+              <fieldset className="loan-actions" disabled={busy}>
                 {mine && l.status === "pending" && (
                   <>
                     <button
@@ -1146,7 +1205,7 @@ function Borrowing({ state, onBook, onChange, incoming }) {
                     Mark as handed over <ArrowRight size={16} />
                   </button>
                 )}
-                {l.status === "lent" && (
+                {mine && l.status === "lent" && (
                   <button
                     className="button secondary"
                     onClick={() => onChange(l.id, "returned")}
@@ -1162,7 +1221,7 @@ function Borrowing({ state, onBook, onChange, incoming }) {
                     Cancel request
                   </button>
                 )}
-              </div>
+              </fieldset>
             </article>
           );
         })}

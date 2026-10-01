@@ -15,7 +15,7 @@ if (!db) {
     await db.query(
       await readFile(new URL("../server/schema.sql", import.meta.url), "utf8"),
     );
-    console.log("Member, session and request-limit tables are ready.");
+    console.log("Member, session, request-limit and shared-club tables are ready.");
   } catch {
     console.error(
       "Migration failed. Check the database connection, permissions and SQL schema. No connection secrets were logged.",
