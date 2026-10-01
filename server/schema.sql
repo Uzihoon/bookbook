@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS club_books (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS club_books_owner_idx ON club_books(owner_id);
+CREATE TABLE IF NOT EXISTS club_comments (
+  id uuid PRIMARY KEY,
+  book_id uuid NOT NULL REFERENCES club_books(id) ON DELETE CASCADE,
+  author_id uuid NOT NULL REFERENCES members(id),
+  body text NOT NULL CHECK (length(btrim(body)) BETWEEN 1 AND 2000),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS club_comments_book_date_idx ON club_comments(book_id, created_at DESC, id);
 CREATE TABLE IF NOT EXISTS club_loans (
   id uuid PRIMARY KEY,
   book_id uuid NOT NULL REFERENCES club_books(id),

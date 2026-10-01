@@ -65,7 +65,9 @@ The explicit env file keeps local Acer database settings in `.env.local` intact.
 
 ## Club data
 
-Books, loans, monthly reading history, and picking turns live in PostgreSQL. Every signed-in member sees the same club. The member directory and chooser dropdown use registered accounts; permission checks use IDs, not display names.
+Books, loans, monthly reading history, picking turns, and book comments live in PostgreSQL. Every signed-in member sees the same club. The member directory and chooser dropdown use registered accounts; permission checks use IDs, not display names.
+
+The book-details popup includes a shared conversation for that bookshelf entry. Members can post plain-text comments (up to 2,000 characters), see authors and Vancouver timestamps, and delete only their own comments after confirmation. The ten newest comments appear first, with older comments available on demand. An unchanged retry reuses its comment ID to avoid duplicates after a lost response.
 
 - Owners can pause lending and accept, decline, hand over, or confirm the return of their copies. Borrowers can cancel pending or accepted requests. Only one borrower can reserve a copy; accepting a request declines competing requests.
 - Any club member can maintain the monthly journal and picking order. The rotation shows one cycle starting with the current month and advances automatically in `America/Vancouver` time. Use **Edit rotation** to reorder, add, or remove participants; saved monthly choices stay unchanged.

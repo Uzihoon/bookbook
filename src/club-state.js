@@ -38,6 +38,11 @@ export function displaySnapshot(snapshot, memberId) {
     currentMonth,
     selections,
     rotationOrder: rotationOrder(snapshot.rotation, currentMonth),
+    comments: (snapshot.comments || []).map((comment) => ({
+      ...comment,
+      author: names.get(comment.authorId) || "Club member",
+      isMine: comment.authorId === memberId,
+    })),
     books: snapshot.books.map((b) => ({
       ...b,
       owner: names.get(b.ownerId) || "Club member",

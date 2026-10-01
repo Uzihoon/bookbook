@@ -549,3 +549,140 @@ test("calendar advancement changes the projection month without writing records 
   assert.equal(before.revision, after.revision);
   assert.deepEqual(after.queue, []);
 });
+
+test("book comments persist across members, bind authors to the session, and retry without duplication", async () => {
+  const copy = await add();
+  const id = randomUUID();
+  const body = {
+    action: "addComment",
+    id,
+    bookId: copy.id,
+    body: "  이 책이 좋았어요.\n<script>alert(1)</script>  ",
+    authorId: b,
+  };
+  const added = await call(a, { ...body, revision: 1 });
+  assert.equal(added.status, 200);
+  const comment = added.data.comments[0];
+  assert.equal(comment.id, id);
+  assert.equal(comment.authorId, a);
+  assert.equal(comment.bookId, copy.id);
+  assert.equal(comment.body, body.body.trim());
+  assert.ok(Number.isFinite(Date.parse(comment.createdAt)));
+  assert.deepEqual((await call(b)).data.comments, added.data.comments);
+  const retry = await call(a, { ...body, revision: added.data.revision });
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.comments.length, 1);
+  assert.equal(
+    (await call(b, { ...body, revision: retry.data.revision })).status,
+    409,
+  );
+  assert.equal(
+    (
+      await call(a, {
+        ...body,
+        body: "different",
+        revision: retry.data.revision,
+      })
+    ).status,
+    409,
+  );
+});
+
+test("comments reject blank, oversized, invalid, missing-book and unauthenticated posts", async () => {
+  const copy = await add();
+  for (const body of [
+    "",
+    "  \n ",
+    "x".repeat(2001),
+    "bad\u0000text",
+    123,
+    null,
+  ]) {
+    assert.equal(
+      (
+        await call(a, {
+          action: "addComment",
+          revision: 1,
+          id: randomUUID(),
+          bookId: copy.id,
+          body,
+        })
+      ).status,
+      400,
+    );
+  }
+  assert.equal(
+    (
+      await call(a, {
+        action: "addComment",
+        revision: 1,
+        id: randomUUID(),
+        bookId: randomUUID(),
+        body: "hello",
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await call(null, {
+        action: "addComment",
+        revision: 1,
+        id: randomUUID(),
+        bookId: copy.id,
+        body: "hello",
+      })
+    ).status,
+    401,
+  );
+  assert.deepEqual((await call(a)).data.comments, []);
+});
+
+test("only a comment's author can delete it; books and other comments remain", async () => {
+  const copy = await add();
+  const first = randomUUID(),
+    second = randomUUID();
+  assert.equal(
+    (
+      await call(b, {
+        action: "addComment",
+        revision: 1,
+        id: first,
+        bookId: copy.id,
+        body: "First",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await call(a, {
+        action: "addComment",
+        revision: 2,
+        id: second,
+        bookId: copy.id,
+        body: "Second",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await call(a, { action: "deleteComment", revision: 3, id: first })).status,
+    403,
+  );
+  const removed = await call(b, {
+    action: "deleteComment",
+    revision: 3,
+    id: first,
+  });
+  assert.equal(removed.status, 200);
+  assert.deepEqual(
+    removed.data.comments.map((c) => c.id),
+    [second],
+  );
+  assert.equal(removed.data.books.length, 1);
+  assert.equal(
+    (await call(b, { action: "deleteComment", revision: 4, id: first })).status,
+    404,
+  );
+});

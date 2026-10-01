@@ -90,6 +90,7 @@ export async function clubSnapshot(db, now = new Date()) {
  (SELECT coalesce(jsonb_agg(jsonb_build_object('month',month,'chooserId',chooser_id,'bookId',book_id) ORDER BY month DESC),'[]'::jsonb) FROM club_selections WHERE kind='history') AS picks,
  (SELECT coalesce(jsonb_agg(jsonb_build_object('month',month,'chooserId',chooser_id,'bookId',book_id) ORDER BY month),'[]'::jsonb) FROM club_selections WHERE kind='upcoming') AS queue
   , (SELECT jsonb_build_object('anchorMonth',anchor_month,'memberIds',member_ids) FROM club_rotation WHERE id=1) AS rotation
+  , (SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'bookId',book_id,'authorId',author_id,'body',body,'createdAt',created_at) ORDER BY created_at DESC,id),'[]'::jsonb) FROM club_comments) AS comments
  FROM club_state WHERE id=1`);
   if (!rows[0]) throw new Error("CLUB_SCHEMA_MISSING");
   return { ...rows[0], currentMonth: clubMonth(now) };
@@ -110,6 +111,48 @@ async function mutate(db, actor, body, now) {
       )
     ).rows.length > 0;
   switch (body.action) {
+    case "addComment": {
+      const id = uuid(body.id);
+      const book = await getBook(body.bookId);
+      if (
+        typeof body.body !== "string" ||
+        !body.body.trim() ||
+        body.body.trim().length > 2000
+      )
+        problem(400, "Write a comment between 1 and 2,000 characters.");
+      const content = text(body.body, 2000, true);
+      const existing = (
+        await db.query("SELECT * FROM club_comments WHERE id=$1", [id])
+      ).rows[0];
+      if (existing) {
+        if (
+          existing.author_id !== actor ||
+          existing.book_id !== book.id ||
+          existing.body !== content
+        )
+          problem(
+            409,
+            "That comment was already submitted with different details.",
+          );
+        break;
+      }
+      await db.query(
+        "INSERT INTO club_comments(id,book_id,author_id,body) VALUES($1,$2,$3,$4)",
+        [id, book.id, actor, content],
+      );
+      break;
+    }
+    case "deleteComment": {
+      const id = uuid(body.id);
+      const comment = (
+        await db.query("SELECT author_id FROM club_comments WHERE id=$1", [id])
+      ).rows[0];
+      if (!comment) problem(404, "That comment has already been removed.");
+      if (comment.author_id !== actor)
+        problem(403, "You can only delete your own comments.");
+      await db.query("DELETE FROM club_comments WHERE id=$1", [id]);
+      break;
+    }
     case "addBook": {
       const b = body.book,
         meta = metadata(b);

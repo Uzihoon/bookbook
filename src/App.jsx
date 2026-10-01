@@ -26,6 +26,7 @@ import { addMonths } from "../shared/rotation.js";
 import useClub from "./useClub.js";
 import { pageForPath, pathForPage } from "./navigation.js";
 import AddBook from "./AddBook.jsx";
+import BookComments from "./BookComments.jsx";
 import { coverSource } from "./catalog.js";
 const monthLabel = (value, short = false) =>
   new Date(value + "-02T12:00:00").toLocaleDateString("en-US", {
@@ -826,6 +827,13 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
               />
             </div>
           </div>
+          <BookComments
+            key={bookInModal.id}
+            bookId={bookInModal.id}
+            comments={state.comments}
+            busy={busy}
+            onSave={mutate}
+          />
         </Modal>
       )}
       {modal?.type === "pick" && (

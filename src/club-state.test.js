@@ -114,3 +114,25 @@ test("rotation view is bounded and old saved months remain editable outside the 
     ["b", "a"],
   );
 });
+
+test("comment display uses member IDs for names and ownership", () => {
+  const snapshot = {
+    revision: 1,
+    members: [
+      { id: "a", name: "Reader" },
+      { id: "b", name: "Reader" },
+    ],
+    books: [],
+    loans: [],
+    queue: [],
+    picks: [],
+    comments: [
+      { id: "c1", bookId: "book", authorId: "a", body: "First" },
+      { id: "c2", bookId: "book", authorId: "b", body: "Second" },
+    ],
+  };
+  const state = displaySnapshot(snapshot, "a");
+  assert.equal(state.comments[0].author, "Reader");
+  assert.equal(state.comments[0].isMine, true);
+  assert.equal(state.comments[1].isMine, false);
+});
