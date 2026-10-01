@@ -1,3 +1,4 @@
+import { clubMonth } from "../shared/rotation.js";
 import { randomUUID } from "node:crypto";
 const reply = (body, status = 200) =>
   Response.json(body, {
@@ -81,18 +82,19 @@ function metadata(b) {
   };
 }
 // A single SQL statement gives all collections the same MVCC snapshot.
-export async function clubSnapshot(db) {
+export async function clubSnapshot(db, now = new Date()) {
   const { rows } = await db.query(`SELECT revision,
  (SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'name',name) ORDER BY created_at,id),'[]'::jsonb) FROM members) AS members,
  (SELECT coalesce(jsonb_agg(b.metadata || jsonb_build_object('id',b.id,'ownerId',b.owner_id,'title',b.title,'author',b.author,'status',coalesce((SELECT CASE WHEN l.status='accepted' THEN 'reserved' ELSE 'lent' END FROM club_loans l WHERE l.book_id=b.id AND l.status IN ('accepted','lent')),b.availability)) ORDER BY b.created_at DESC,b.id),'[]'::jsonb) FROM club_books b) AS books,
  (SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'bookId',book_id,'borrowerId',borrower_id,'status',status,'date',created_at) ORDER BY created_at DESC,id),'[]'::jsonb) FROM club_loans) AS loans,
  (SELECT coalesce(jsonb_agg(jsonb_build_object('month',month,'chooserId',chooser_id,'bookId',book_id) ORDER BY month DESC),'[]'::jsonb) FROM club_selections WHERE kind='history') AS picks,
  (SELECT coalesce(jsonb_agg(jsonb_build_object('month',month,'chooserId',chooser_id,'bookId',book_id) ORDER BY month),'[]'::jsonb) FROM club_selections WHERE kind='upcoming') AS queue
+  , (SELECT jsonb_build_object('anchorMonth',anchor_month,'memberIds',member_ids) FROM club_rotation WHERE id=1) AS rotation
  FROM club_state WHERE id=1`);
   if (!rows[0]) throw new Error("CLUB_SCHEMA_MISSING");
-  return rows[0];
+  return { ...rows[0], currentMonth: clubMonth(now) };
 }
-async function mutate(db, actor, body) {
+async function mutate(db, actor, body, now) {
   const getBook = async (id) => {
     const b = (
       await db.query("SELECT * FROM club_books WHERE id=$1", [uuid(id)])
@@ -190,6 +192,43 @@ async function mutate(db, actor, body) {
         );
       break;
     }
+    case "saveRotation": {
+      const current = clubMonth(now);
+      if (body.anchorMonth !== current)
+        problem(
+          409,
+          "The calendar month changed. Refresh the club and review the rotation.",
+        );
+      if (
+        !Array.isArray(body.memberIds) ||
+        body.memberIds.length > 500 ||
+        new Set(body.memberIds).size !== body.memberIds.length
+      )
+        problem(400, "Choose each rotation member once.");
+      const ids = body.memberIds.map(uuid);
+      const members = (
+        await db.query("SELECT id FROM members WHERE id = ANY($1::uuid[])", [
+          ids,
+        ])
+      ).rows;
+      if (members.length !== ids.length)
+        problem(400, "Choose existing club members.");
+      await db.query(
+        "UPDATE club_rotation SET anchor_month=$1, member_ids=$2 WHERE id=1",
+        [current, ids],
+      );
+      break;
+    }
+    case "clearSelection": {
+      const result = await db.query(
+        "DELETE FROM club_selections WHERE month=$1 RETURNING month",
+        [month(body.month)],
+      );
+      if (!result.rows.length)
+        problem(404, "There is no saved selection for that month.");
+      break;
+    }
+    case "saveTurn":
     case "saveSelection": {
       if (!["history", "upcoming"].includes(body.kind))
         problem(400, "Choose a valid reading plan.");
@@ -204,6 +243,36 @@ async function mutate(db, actor, body) {
       )
         problem(400, "Choose an existing club member.");
       if (bookId) await getBook(bookId);
+      if (body.action === "saveTurn") {
+        const original = body.originalMonth ? month(body.originalMonth) : null;
+        if (
+          original &&
+          !(
+            await db.query(
+              "SELECT month FROM club_selections WHERE kind=$1 AND month=$2",
+              [body.kind, original],
+            )
+          ).rows.length
+        )
+          problem(409, "That saved month changed. Refresh and try again.");
+        if (
+          original !== when &&
+          (
+            await db.query("SELECT month FROM club_selections WHERE month=$1", [
+              when,
+            ])
+          ).rows.length
+        )
+          problem(
+            409,
+            "That month already has a saved selection. Edit or clear it first.",
+          );
+        if (original && original !== when)
+          await db.query(
+            "DELETE FROM club_selections WHERE kind=$1 AND month=$2",
+            [body.kind, original],
+          );
+      }
       await db.query(
         `INSERT INTO club_selections(kind,month,chooser_id,book_id,updated_by) VALUES($1,$2,$3,$4,$5)
    ON CONFLICT(kind,month) DO UPDATE SET chooser_id=excluded.chooser_id,book_id=excluded.book_id,updated_by=excluded.updated_by`,
@@ -242,7 +311,7 @@ async function mutate(db, actor, body) {
       problem(400, "Unknown club action.");
   }
 }
-export function createClub({ db, auth, limit }) {
+export function createClub({ db, auth, limit, now = () => new Date() }) {
   return async (request) => {
     let client;
     try {
@@ -252,7 +321,7 @@ export function createClub({ db, auth, limit }) {
         problem(503, "The club database is unavailable. Please try again.");
       const member = await auth.member(request);
       if (!member) problem(401, "Please log in again to continue.");
-      if (request.method === "GET") return reply(await clubSnapshot(db));
+      if (request.method === "GET") return reply(await clubSnapshot(db, now()));
       if (
         request.headers.get("origin") !== new URL(request.url).origin ||
         request.headers.get("sec-fetch-site") === "cross-site"
@@ -292,11 +361,11 @@ export function createClub({ db, auth, limit }) {
           409,
           "Someone updated the club. The latest data has been loaded; review your change and save again.",
         );
-      await mutate(client, member.id, body);
+      await mutate(client, member.id, body, now());
       await client.query(
         "UPDATE club_state SET revision=revision+1 WHERE id=1",
       );
-      const state = await clubSnapshot(client);
+      const state = await clubSnapshot(client, now());
       await client.query("COMMIT");
       return reply(state);
     } catch (error) {

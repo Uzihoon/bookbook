@@ -1,3 +1,8 @@
+import {
+  clubMonth,
+  rotationOrder,
+  projectRotation,
+} from "../shared/rotation.js";
 // Retire browser-only collections and their old cleanup backups. Never import them.
 export function clearLegacyCollections(storage) {
   try {
@@ -16,8 +21,23 @@ export function clearLegacyCollections(storage) {
 }
 export function displaySnapshot(snapshot, memberId) {
   const names = new Map(snapshot.members.map((m) => [m.id, m.name]));
+  const currentMonth = snapshot.currentMonth || clubMonth();
+  const selections = [
+    ...snapshot.queue.map((p) => ({ ...p, kind: "upcoming" })),
+    ...snapshot.picks.map((p) => ({ ...p, kind: "history" })),
+  ].map((p) => ({
+    ...p,
+    persisted: true,
+    name: names.get(p.chooserId) || "Club member",
+  }));
+  const queue = snapshot.rotation
+    ? projectRotation(snapshot.rotation, currentMonth, selections)
+    : snapshot.queue;
   return {
     ...snapshot,
+    currentMonth,
+    selections,
+    rotationOrder: rotationOrder(snapshot.rotation, currentMonth),
     books: snapshot.books.map((b) => ({
       ...b,
       owner: names.get(b.ownerId) || "Club member",
@@ -32,7 +52,7 @@ export function displaySnapshot(snapshot, memberId) {
       ...p,
       chooser: names.get(p.chooserId) || "Club member",
     })),
-    queue: snapshot.queue.map((p) => ({
+    queue: queue.map((p) => ({
       ...p,
       name: names.get(p.chooserId) || "Club member",
     })),

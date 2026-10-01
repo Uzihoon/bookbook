@@ -18,7 +18,11 @@ import {
   SlidersHorizontal,
   Leaf,
   CheckCheck,
+  Trash2,
+  Pencil,
 } from "lucide-react";
+import { RotationEditor, SavedMonths, ClearSelection } from "./Rotation.jsx";
+import { addMonths } from "../shared/rotation.js";
 import useClub from "./useClub.js";
 import { pageForPath, pathForPage } from "./navigation.js";
 import AddBook from "./AddBook.jsx";
@@ -226,8 +230,23 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
     );
   const bookInModal =
     modal?.type === "book" ? state.books.find((b) => b.id === modal.id) : null;
-  const openPick = (mode = "upcoming", value = null) =>
-    setModal({ type: "pick", mode, value });
+  const openPick = (mode = "upcoming", value = null, editableMonth = false) => {
+    const initial = value || (mode === "upcoming" ? state.queue[0] : null);
+    const useTurn = mode === "upcoming" || editableMonth;
+    setModal({
+      type: "pick",
+      mode: useTurn && initial?.kind === "history" ? "record" : mode,
+      value: initial,
+      useTurn,
+      editableMonth,
+    });
+  };
+  const clearMonth = (item) =>
+    setModal({
+      type: "clearSelection",
+      month: item.month,
+      revision: state.revision,
+    });
   return (
     <>
       <header className="site-header">
@@ -623,13 +642,27 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
               <div className="eyebrow">PASSING THE BOOKMARK</div>
               <h2>The picking order</h2>
               <p>Everyone gets a turn to bring a story to the table.</p>
-              {!state.queue.length && <p>No turns planned yet.</p>}
-              <button
-                className="text-button"
-                onClick={() => openPick("upcoming", {})}
-              >
-                <Plus size={16} /> Plan a month
-              </button>
+              <p className="queue-hint">
+                Starts with {monthLabel(state.currentMonth)}. Repeats
+                automatically in Vancouver time.
+              </p>
+              <div className="rotation-panel-actions">
+                <button
+                  className="text-button"
+                  onClick={() => setModal({ type: "rotation" })}
+                >
+                  <Pencil size={15} /> Edit rotation
+                </button>
+                <button
+                  className="text-button"
+                  onClick={() => setModal({ type: "savedMonths" })}
+                >
+                  Manage saved months
+                </button>
+              </div>
+              {!state.queue.length && (
+                <p>Add members to the rotation to begin.</p>
+              )}
               {state.queue.map((item, i) => (
                 <div className="queue-item" key={item.month}>
                   <div className="queue-person">
@@ -638,40 +671,7 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                       <strong>{item.name}</strong>
                       <span>{monthLabel(item.month)}</span>
                     </div>
-                    <div className="reorder-buttons">
-                      <button
-                        aria-label={`Move ${item.name} earlier`}
-                        disabled={busy || i === 0}
-                        onClick={() =>
-                          transact(
-                            {
-                              action: "swapTurns",
-                              month: item.month,
-                              otherMonth: state.queue[i - 1].month,
-                            },
-                            "Picking order updated.",
-                          )
-                        }
-                      >
-                        <ArrowUp size={15} />
-                      </button>
-                      <button
-                        aria-label={`Move ${item.name} later`}
-                        disabled={busy || i === state.queue.length - 1}
-                        onClick={() =>
-                          transact(
-                            {
-                              action: "swapTurns",
-                              month: item.month,
-                              otherMonth: state.queue[i + 1].month,
-                            },
-                            "Picking order updated.",
-                          )
-                        }
-                      >
-                        <ArrowDown size={15} />
-                      </button>
-                    </div>
+                    {i === 0 && <span className="current-tag">This month</span>}
                   </div>
                   <button
                     className="queue-pick"
@@ -682,12 +682,29 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
                       : "Choose a book"}
                     <ArrowUpRight size={14} />
                   </button>
+                  <div className="turn-actions">
+                    <button
+                      className="text-button"
+                      onClick={() => openPick("upcoming", item, true)}
+                    >
+                      Edit month
+                    </button>
+                    {item.persisted && (
+                      <button
+                        className="text-button"
+                        onClick={() => clearMonth(item)}
+                        aria-label={`Clear selection for ${monthLabel(item.month)}`}
+                      >
+                        <Trash2 size={14} /> Clear selection
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
               {state.queue.length > 1 && (
                 <p className="queue-hint">
-                  Use the arrows to swap turns. A chosen book stays with its
-                  chooser.
+                  After the last person, the order starts again. Saved month
+                  selections take priority over the repeating order.
                 </p>
               )}
             </aside>
@@ -826,11 +843,21 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
               state={state}
               memberId={member.id}
               busy={busy}
+              editableMonth={modal.editableMonth}
+              useTurn={modal.useTurn}
+              onClear={
+                modal.useTurn && modal.value?.persisted
+                  ? () => clearMonth(modal.value)
+                  : null
+              }
               onSave={async (value, revision) => {
                 await mutate({
                   revision,
-                  action: "saveSelection",
+                  action: modal.useTurn ? "saveTurn" : "saveSelection",
                   kind: modal.mode === "record" ? "history" : "upcoming",
+                  ...(modal.useTurn && modal.value?.persisted
+                    ? { originalMonth: modal.value.month }
+                    : {}),
                   ...value,
                 });
                 setModal(null);
@@ -850,6 +877,54 @@ export default function App({ member, onLogout, signingOut, logoutError }) {
               </button>
             </div>
           )}
+        </Modal>
+      )}
+      {modal?.type === "rotation" && (
+        <Modal
+          title="THE REPEATING ORDER"
+          busy={busy}
+          onClose={() => setModal(null)}
+        >
+          <RotationEditor
+            state={state}
+            busy={busy}
+            onSave={async (value) => {
+              await mutate({ action: "saveRotation", ...value });
+              setModal(null);
+              notify("The repeating order is saved.");
+            }}
+          />
+        </Modal>
+      )}
+      {modal?.type === "savedMonths" && (
+        <Modal title="SAVED MONTHS" onClose={() => setModal(null)}>
+          <SavedMonths
+            state={state}
+            onEdit={(item) => openPick("upcoming", item, true)}
+            onClear={clearMonth}
+          />
+        </Modal>
+      )}
+      {modal?.type === "clearSelection" && (
+        <Modal
+          title="CLEAR MONTH SELECTION"
+          busy={busy}
+          onClose={() => setModal(null)}
+        >
+          <ClearSelection
+            month={modal.month}
+            busy={busy}
+            revision={modal.revision}
+            onConfirm={async (revision) => {
+              await mutate({
+                action: "clearSelection",
+                month: modal.month,
+                revision: revision ?? state.revision,
+              });
+              setModal(null);
+              notify("The saved month selection was cleared.");
+            }}
+          />
         </Modal>
       )}
       {modal?.type === "members" && (
@@ -1012,27 +1087,45 @@ function BookAction({ book, state, onRequest, onLoans, onAvailability, busy }) {
     </>
   );
 }
-function PickForm({ mode, value, state, onSave, memberId, busy }) {
+function PickForm({
+  mode,
+  value,
+  state,
+  onSave,
+  memberId,
+  busy,
+  editableMonth,
+  useTurn,
+  onClear,
+}) {
   const editingRevision = useRef(state.revision);
   const initial = value || (mode === "upcoming" ? state.queue[0] : null) || {};
-  const today = new Date();
-  const defaultDate = new Date(
-    today.getFullYear(),
-    today.getMonth() + (mode === "upcoming" ? 1 : 0),
-    1,
+  const defaultMonth = addMonths(
+    state.currentMonth,
+    mode === "upcoming" ? 1 : 0,
   );
-  const defaultMonth = `${defaultDate.getFullYear()}-${String(defaultDate.getMonth() + 1).padStart(2, "0")}`;
   const [month, setMonth] = useState(initial.month || defaultMonth),
     [bookId, setBookId] = useState(
       (mode === "record" ? value?.bookId : initial.bookId) || "",
     ),
     [chooserId, setChooserId] = useState(initial.chooserId || memberId),
     [saveError, setSaveError] = useState("");
+  const duplicate =
+    useTurn &&
+    state.selections.some(
+      (p) =>
+        p.month === month &&
+        !(
+          initial.persisted &&
+          initial.month === month &&
+          initial.kind === p.kind
+        ),
+    );
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
-        if (busy) return;
+        if (busy || duplicate) return;
         setSaveError("");
         try {
           await onSave(
@@ -1061,7 +1154,7 @@ function PickForm({ mode, value, state, onSave, memberId, busy }) {
           type="month"
           min="2000-01"
           max="2099-12"
-          disabled={busy || !!initial.month}
+          disabled={busy || (!editableMonth && !!initial.month)}
           required
           value={month}
           onChange={(e) => setMonth(e.target.value)}
@@ -1112,20 +1205,51 @@ function PickForm({ mode, value, state, onSave, memberId, busy }) {
           </div>
         </div>
       )}
-      {mode === "record" && state.picks.some((p) => p.month === month) && (
-        <p className="form-hint">
-          This will update the existing pick for {monthLabel(month)}.
+      {duplicate && (
+        <p className="form-error" role="alert">
+          This month already has a saved selection. Edit or clear it in Manage
+          saved months first.
         </p>
       )}
+      {editableMonth &&
+        initial.persisted &&
+        initial.month !== month &&
+        !duplicate && (
+          <p className="form-hint">
+            This moves the saved selection from {monthLabel(initial.month)} to{" "}
+            {monthLabel(month)}. The repeating order stays unchanged.
+          </p>
+        )}
+      {!useTurn &&
+        mode === "record" &&
+        state.picks.some((p) => p.month === month) && (
+          <p className="form-hint">
+            This will update the existing pick for {monthLabel(month)}.
+          </p>
+        )}
       {saveError && (
         <p className="form-error" role="alert">
           {saveError}
         </p>
       )}
-      <button className="button primary full" type="submit" disabled={busy}>
+      <button
+        className="button primary full"
+        type="submit"
+        disabled={busy || duplicate}
+      >
         <Check size={17} /> Save {mode === "record" ? "monthly" : "upcoming"}{" "}
         pick
       </button>
+      {onClear && (
+        <button
+          type="button"
+          className="quiet-button"
+          disabled={busy}
+          onClick={onClear}
+        >
+          Clear saved selection for {monthLabel(initial.month)}
+        </button>
+      )}
     </form>
   );
 }

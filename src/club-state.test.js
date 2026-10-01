@@ -81,3 +81,36 @@ test("API failures and malformed snapshots cannot be mistaken for a successful s
     state,
   );
 });
+
+test("rotation view is bounded and old saved months remain editable outside the visible cycle", () => {
+  const snapshot = {
+    revision: 0,
+    currentMonth: "2026-10",
+    rotation: { anchorMonth: "2026-10", memberIds: ["a", "b"] },
+    members: [
+      { id: "a", name: "First" },
+      { id: "b", name: "Second" },
+    ],
+    books: [],
+    loans: [],
+    picks: [],
+    queue: [
+      { month: "2026-01", chooserId: "a", bookId: null },
+      { month: "2026-10", chooserId: "b", bookId: null },
+    ],
+  };
+  const state = displaySnapshot(snapshot, "a");
+  assert.deepEqual(
+    state.queue.map((t) => t.month),
+    ["2026-10", "2026-11"],
+  );
+  assert.equal(state.queue[0].name, "Second");
+  assert.equal(state.queue[0].persisted, true);
+  assert.equal(state.queue[1].persisted, false);
+  assert.equal(state.selections[0].month, "2026-01");
+  assert.deepEqual(
+    displaySnapshot({ ...snapshot, currentMonth: "2026-11" }, "a")
+      .rotationOrder,
+    ["b", "a"],
+  );
+});

@@ -55,4 +55,26 @@ CREATE TABLE IF NOT EXISTS club_selections (
   CHECK (kind = 'upcoming' OR book_id IS NOT NULL),
   PRIMARY KEY (kind,month)
 );
+CREATE TABLE IF NOT EXISTS club_rotation (
+  id integer PRIMARY KEY CHECK (id = 1),
+  anchor_month text NOT NULL CHECK (anchor_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  member_ids uuid[] NOT NULL DEFAULT '{}'
+);
+-- Seed once from existing planned turns, wrapping old dates behind future dates.
+-- Subsequent migrations never replace an organizer's saved order.
+WITH clock AS (
+  SELECT to_char(now() AT TIME ZONE 'America/Vancouver', 'YYYY-MM') AS month
+), ordered_members AS (
+  SELECT m.id, m.created_at,
+    min(CASE WHEN s.month >= clock.month THEN s.month ELSE '9999-' || s.month END) AS planned
+  FROM members m CROSS JOIN clock
+  LEFT JOIN club_selections s ON s.chooser_id = m.id AND s.kind = 'upcoming'
+  GROUP BY m.id, m.created_at
+)
+INSERT INTO club_rotation(id, anchor_month, member_ids)
+SELECT 1,
+  coalesce((SELECT min(s.month) FROM club_selections s, clock WHERE s.kind='upcoming' AND s.month >= clock.month), (SELECT month FROM clock)),
+  coalesce(array_agg(id ORDER BY planned NULLS LAST, created_at, id), '{}'::uuid[])
+FROM ordered_members
+ON CONFLICT (id) DO NOTHING;
 COMMIT;

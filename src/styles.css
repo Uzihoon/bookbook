@@ -2838,3 +2838,78 @@ fieldset.loan-actions {
   margin: 0;
   min-width: 0;
 }
+
+.rotation-panel-actions,
+.turn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+}
+.rotation-panel-actions {
+  margin: 20px 0 8px;
+}
+.turn-actions {
+  margin-top: 10px;
+}
+.turn-actions .text-button {
+  font-size: 12px;
+}
+.rotation-editor-list,
+.saved-month-list {
+  list-style: none;
+  padding: 0;
+  max-height: 45vh;
+  overflow: auto;
+}
+.rotation-editor-list li,
+.saved-month-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 0;
+  border-bottom: 1px solid #e2ddd3;
+}
+.rotation-editor-list li > div:first-child,
+.saved-month-list li > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rotation-editor-list span,
+.saved-month-list span {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  color: #747469;
+}
+.rotation-controls {
+  display: flex;
+  flex-shrink: 0;
+}
+.rotation-controls .icon-button {
+  width: 32px;
+  height: 36px;
+}
+.saved-month-actions {
+  display: grid;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.saved-month-list p {
+  margin: 6px 0 0;
+}
+.queue-person .current-tag {
+  margin-left: auto;
+  white-space: nowrap;
+}
+@media (max-width: 450px) {
+  .saved-month-list li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .saved-month-actions {
+    display: flex;
+    gap: 20px;
+  }
+}
